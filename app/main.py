@@ -47,26 +47,38 @@ def index(request: Request):
     return templates.TemplateResponse(request, "index.html")
 
 
+def _where(supervisor=None, tecnico=None, projeto=None, propriedade=None):
+    """Monta WHERE + parâmetros para os filtros (mesmas colunas nas duas views)."""
+    w, p = ["1=1"], {}
+    if supervisor:
+        w.append("supervisor = :s"); p["s"] = supervisor
+    if tecnico:
+        w.append("tecnico = :t"); p["t"] = tecnico
+    if projeto:
+        w.append("projeto = :pj"); p["pj"] = projeto
+    if propriedade:
+        w.append("id_propriedade = :pr"); p["pr"] = propriedade
+    return w, p
+
+
 @app.get("/api/filtros")
-def filtros(supervisor: str | None = None, tecnico: str | None = None):
+def filtros(supervisor: str | None = None, tecnico: str | None = None, projeto: str | None = None):
+    """Listas dos filtros. Cada lista respeita os OUTROS filtros já escolhidos."""
     with engine.connect() as con:
-        sups = [r[0] for r in con.execute(text(
-            f"SELECT DISTINCT supervisor FROM {PROPS} WHERE supervisor IS NOT NULL ORDER BY 1"))]
-        w, p = ["tecnico IS NOT NULL"], {}
-        if supervisor:
-            w.append("supervisor = :s"); p["s"] = supervisor
-        tecs = [r[0] for r in con.execute(text(
-            f"SELECT DISTINCT tecnico FROM {PROPS} WHERE {' AND '.join(w)} ORDER BY 1"), p)]
-        w2, p2 = ["1=1"], {}
-        if supervisor:
-            w2.append("supervisor = :s"); p2["s"] = supervisor
-        if tecnico:
-            w2.append("tecnico = :t"); p2["t"] = tecnico
+        def lista(coluna, **outros):
+            w, p = _where(**outros)
+            w.append(f"{coluna} IS NOT NULL")
+            return [r[0] for r in con.execute(text(
+                f"SELECT DISTINCT {coluna} FROM {PROPS} WHERE {' AND '.join(w)} ORDER BY 1"), p)]
+        projetos = lista("projeto", supervisor=supervisor, tecnico=tecnico)
+        sups = lista("supervisor", projeto=projeto)
+        tecs = lista("tecnico", supervisor=supervisor, projeto=projeto)
+        w2, p2 = _where(supervisor, tecnico, projeto)
         props = [{"id": r[0], "nome": r[1]} for r in con.execute(text(
             f"SELECT DISTINCT id_propriedade, COALESCE(propriedade, 'Propriedade ' || id_propriedade) "
             f"FROM {PROPS} WHERE {' AND '.join(w2)} ORDER BY 2"), p2)]
         meses = [r[0] for r in con.execute(text(f"SELECT DISTINCT mes FROM {TABLE} WHERE mes >= :mi ORDER BY 1"), {"mi": MES_INICIO})]
-    return {"supervisores": sups, "tecnicos": tecs, "propriedades": props, "meses": meses}
+    return {"projetos": projetos, "supervisores": sups, "tecnicos": tecs, "propriedades": props, "meses": meses}
 
 
 @app.get("/api/propriedade/{id_propriedade}")
@@ -92,14 +104,9 @@ def propriedade(id_propriedade: int):
 
 @app.get("/api/serie")
 def serie(supervisor: str | None = None, tecnico: str | None = None, propriedade: int | None = None,
+          projeto: str | None = None,
           de: str | None = Query(None, description="YYYY-MM"), ate: str | None = Query(None, description="YYYY-MM")):
-    where, p = ["1=1"], {}
-    if supervisor:
-        where.append("supervisor = :s"); p["s"] = supervisor
-    if tecnico:
-        where.append("tecnico = :t"); p["t"] = tecnico
-    if propriedade:
-        where.append("id_propriedade = :pr"); p["pr"] = propriedade
+    where, p = _where(supervisor, tecnico, projeto, propriedade)
     p["de"] = max(de or MES_INICIO, MES_INICIO)
     where.append("mes >= :de")
     if ate:
@@ -112,13 +119,7 @@ def serie(supervisor: str | None = None, tecnico: str | None = None, propriedade
                COALESCE(SUM(COALESCE(receita_bruta,0) - COALESCE(despesa_direta,0)), 0) AS margem_bruta
         FROM {TABLE} WHERE {' AND '.join(where)}
         GROUP BY mes ORDER BY mes"""
-    wp, pp = ["1=1"], {}
-    if supervisor:
-        wp.append("supervisor = :s"); pp["s"] = supervisor
-    if tecnico:
-        wp.append("tecnico = :t"); pp["t"] = tecnico
-    if propriedade:
-        wp.append("id_propriedade = :pr"); pp["pr"] = propriedade
+    wp, pp = _where(supervisor, tecnico, projeto, propriedade)
     with engine.connect() as con:
         rows = [dict(r._mapping) for r in con.execute(text(sql), p)]
         total_props = con.execute(text(f"SELECT COUNT(DISTINCT id_propriedade) FROM {PROPS} WHERE {' AND '.join(wp)}"), pp).scalar()
