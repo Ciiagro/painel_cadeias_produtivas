@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Acompanhamento mensal</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root{--bg:#f4f7f4;--card:#fff;--ink:#1d2b22;--mut:#5d6b62;--verde:#2e7d32;--azul:#1565c0;--laranja:#ef6c00;--bd:#dfe6e0}
+  *{box-sizing:border-box} body{margin:0;font:15px/1.4 system-ui,Segoe UI,Arial;background:var(--bg);color:var(--ink)}
+  header{padding:18px 20px;background:var(--verde);color:#fff} h1{margin:0;font-size:20px} header p{margin:4px 0 0;opacity:.9}
+  main{max-width:1200px;margin:0 auto;padding:16px}
+  .filtros{display:flex;flex-wrap:wrap;gap:12px;background:var(--card);padding:12px;border:1px solid var(--bd);border-radius:10px}
+  label{display:flex;flex-direction:column;font-size:12px;color:var(--mut);gap:4px;min-width:220px;flex:1}
+  select{padding:8px;border:1px solid var(--bd);border-radius:8px;font-size:14px}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin:14px 0}
+  .kpi{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:12px}
+  .kpi b{display:block;font-size:22px} .kpi span{font-size:12px;color:var(--mut)}
+  .graf{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:12px;margin-bottom:14px}
+  .graf h2{margin:0 0 8px;font-size:15px} canvas{max-height:280px}
+  table{width:100%;border-collapse:collapse;font-size:13px;background:var(--card)} th,td{padding:6px 8px;border-bottom:1px solid var(--bd);text-align:right} th:first-child,td:first-child{text-align:left}
+  .pos{color:var(--verde)} .neg{color:#c62828}
+  @media(max-width:600px){label{min-width:100%}}
+</style>
+</head>
+<body>
+<header><h1>Acompanhamento mensal</h1><p>Receita bruta, produção e margem bruta por supervisor e técnico</p></header>
+<main>
+  <div class="filtros">
+    <label>Supervisor<select id="sup"><option value="">Todos</option></select></label>
+    <label>Técnico<select id="tec"><option value="">Todos</option></select></label>
+    <label>Propriedade<select id="prop"><option value="">Todas</option></select></label>
+    <label>De<select id="de"></select></label>
+    <label>Até<select id="ate"></select></label>
+  </div>
+  <div class="graf" id="ficha" style="display:none"></div>
+  <div class="kpis" id="kpis"></div>
+  <div class="graf"><h2>Receita bruta (R$)</h2><canvas id="c1"></canvas></div>
+  <div class="graf"><h2>Produção de leite (litros)</h2><canvas id="c2"></canvas></div>
+  <div class="graf"><h2>Margem bruta (R$)</h2><canvas id="c3"></canvas></div>
+  <div class="graf"><h2>Detalhe mensal</h2><div style="overflow:auto"><table id="tab"></table></div></div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const nf = new Intl.NumberFormat('pt-BR',{maximumFractionDigits:0});
+const brl = v => 'R$ ' + nf.format(v);
+let charts = {};
+function desenha(id, rotulos, valores, cor){
+  if(charts[id]) charts[id].destroy();
+  charts[id] = new Chart($(id), {type:'line', data:{labels:rotulos, datasets:[{data:valores, borderColor:cor, backgroundColor:cor+'22', fill:true, tension:.25}]},
+    options:{plugins:{legend:{display:false}}, scales:{y:{ticks:{callback:v=>nf.format(v)}}}}});
+}
+const pct = v => v==null ? '–' : `<span class="${v>=0?'pos':'neg'}">${v>0?'+':''}${v.toLocaleString('pt-BR')}%</span>`;
+async function carregaFiltros(){
+  const f = await (await fetch('/api/filtros?'+new URLSearchParams({supervisor:$('sup').value, tecnico:$('tec').value}))).json();
+  if(!$('sup').dataset.ok){ f.supervisores.forEach(s=>$('sup').add(new Option(s,s))); $('sup').dataset.ok=1;
+    f.meses.forEach(m=>{$('de').add(new Option(m,m)); $('ate').add(new Option(m,m));}); $('de').value=f.meses[0]; $('ate').value=f.meses[f.meses.length-1]; }
+  const atual = $('tec').value; $('tec').length = 1; f.tecnicos.forEach(t=>$('tec').add(new Option(t,t))); $('tec').value = f.tecnicos.includes(atual)?atual:'';
+  const pa = $('prop').value; $('prop').length = 1; f.propriedades.forEach(p=>$('prop').add(new Option(p.nome+' ('+p.id+')', p.id)));
+  $('prop').value = f.propriedades.some(p=>String(p.id)===pa)?pa:'';
+}
+async function atualiza(){
+  const q = new URLSearchParams({supervisor:$('sup').value, tecnico:$('tec').value, propriedade:$('prop').value, de:$('de').value, ate:$('ate').value});
+  if($('prop').value){
+    const p = await (await fetch('/api/propriedade/'+$('prop').value)).json();
+    const dt = v => v ? v.split('-').reverse().join('/') : '–';
+    const tempo = m => { if (m==null) return '–'; const a=Math.floor(m/12), r=m%12; return (a?a+(a>1?' anos':' ano'):'')+(a&&r?' e ':'')+((r||!a)?r+(r===1?' mês':' meses'):''); };
+    $('ficha').style.display='block';
+    $('ficha').innerHTML = `<h2>${p.propriedade||''}</h2><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:6px;font-size:13px">
+      <div><b>Produtor:</b> ${p.produtor||'–'}</div><div><b>Técnico:</b> ${p.tecnico||'–'}</div><div><b>Supervisor:</b> ${p.supervisor||'–'}</div>
+      <div><b>Município:</b> ${p.municipio||'–'}/${p.uf||''}</div><div><b>Projeto:</b> ${p.projeto||'–'}</div>
+      <div><b>Início no projeto:</b> ${dt(p.inicio_projeto)}</div><div><b>Fim no projeto:</b> ${p.fim_projeto?dt(p.fim_projeto):'em andamento'}</div>
+      <div><b>Tempo no projeto:</b> ${tempo(p.tempo_projeto_meses)}</div><div><b>Situação:</b> ${p.status_vinculo||'–'}</div><div><b>Área total / produtiva:</b> ${p.area_total??'–'} / ${p.area_produtiva!=null?(+p.area_produtiva).toFixed(2):'–'} ha</div></div>`;
+  } else { $('ficha').style.display='none'; }
+  for (const [k,v] of [...q]) if(!v) q.delete(k);
+  const d = await (await fetch('/api/serie?'+q)).json();
+  const m = d.map(x=>x.mes), ult = d[d.length-1];
+  $('kpis').innerHTML = ult ? `
+    <div class="kpi"><span>Propriedades ativas</span><b>${nf.format(ult.propriedades_total)}</b><small>${nf.format(ult.propriedades)} com leite lançado em ${ult.mes}</small></div>
+    <div class="kpi"><span>Receita bruta (${ult.mes})</span><b>${brl(ult.receita_bruta)}</b>${pct(ult.var_receita_pct)} vs mês anterior</div>
+    <div class="kpi"><span>Produção (${ult.mes})</span><b>${nf.format(ult.producao)} L</b>${pct(ult.var_producao_pct)} vs mês anterior</div>
+    <div class="kpi"><span>Margem bruta (${ult.mes})</span><b>${brl(ult.margem_bruta)}</b>${pct(ult.var_margem_pct)} vs mês anterior</div>` : '<p>Sem dados para o filtro.</p>';
+  desenha('c1', m, d.map(x=>x.receita_bruta), '#2e7d32');
+  desenha('c2', m, d.map(x=>x.producao), '#1565c0');
+  desenha('c3', m, d.map(x=>x.margem_bruta), '#ef6c00');
+  $('tab').innerHTML = '<tr><th>Mês</th><th>Com leite lançado</th><th>Receita bruta</th><th>Var.</th><th>Produção (L)</th><th>Var.</th><th>Margem bruta</th><th>Var.</th></tr>' +
+    d.map(x=>`<tr><td>${x.mes}</td><td>${nf.format(x.propriedades)}</td><td>${brl(x.receita_bruta)}</td><td>${pct(x.var_receita_pct)}</td><td>${nf.format(x.producao)}</td><td>${pct(x.var_producao_pct)}</td><td>${brl(x.margem_bruta)}</td><td>${pct(x.var_margem_pct)}</td></tr>`).join('');
+}
+$('sup').onchange = async()=>{ $('tec').value=''; $('prop').value=''; await carregaFiltros(); atualiza(); };
+$('tec').onchange = async()=>{ $('prop').value=''; await carregaFiltros(); atualiza(); };
+['prop','de','ate'].forEach(i=>$(i).onchange=atualiza);
+carregaFiltros().then(atualiza);
+</script>
+</body>
+</html>

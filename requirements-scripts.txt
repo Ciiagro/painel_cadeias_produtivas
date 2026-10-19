@@ -1,0 +1,6 @@
+# Só para os scripts de carga/cópia no seu computador (NÃO vai para a Vercel)
+pandas>=2.2
+sqlalchemy>=2.0
+psycopg2-binary>=2.9
+pyodbc
+python-dotenv>=1.0
