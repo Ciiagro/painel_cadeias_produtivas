@@ -126,6 +126,7 @@ fin AS (
     SUM(qtd) FILTER (WHERE grupo = 'Receita' AND item ILIKE 'Venda de leite in natura%') AS leite_vendido_l,
     SUM(qtd) FILTER (WHERE grupo = 'Despesa' AND item ILIKE 'Leite consumido%') AS leite_consumido_l,
     SUM(qtd) FILTER (WHERE grupo = 'Despesa' AND item ILIKE 'Leite para bezerra%') AS leite_bezerras_l,
+    SUM(valor) FILTER (WHERE grupo = 'Receita' AND item ILIKE 'Venda de leite in natura%') AS leite_in_natura_rs,
     SUM(valor) FILTER (WHERE grupo = 'Receita'
          AND (item ILIKE 'Venda de leite in natura%' OR item ILIKE 'Bonifica%')) AS venda_leite_rs,
     SUM(valor) FILTER (WHERE grupo = 'Receita'
@@ -147,6 +148,7 @@ SELECT f.id_propriedade,
        ROUND(f.leite_vendido_l::numeric, 1)     AS leite_vendido_l,
        ROUND(f.leite_consumido_l::numeric, 1)   AS leite_consumido_l,
        ROUND(f.leite_bezerras_l::numeric, 1)    AS leite_bezerras_l,
+       ROUND(f.leite_in_natura_rs::numeric, 2)  AS leite_in_natura_rs,
        ROUND(f.venda_leite_rs::numeric, 2)      AS venda_leite_rs,
        ROUND(f.receita_bruta::numeric, 2)       AS receita_bruta,
        ROUND(f.despesa_direta::numeric, 2)      AS despesa_direta,

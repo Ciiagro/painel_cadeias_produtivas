@@ -19,7 +19,7 @@ SELECT v.id_propriedade, v.propriedade, v.produtor,
        COALESCE(k2.ultimo_supervisor, v.supervisor) AS supervisor,
        v.supervisor_sisateg, v.municipio, v.uf, v.area_total, v.area_produtiva,
        v.projeto, v.qtd_projetos, v.inicio_projeto, v.fim_projeto, v.status_vinculo, v.motivo_desativacao, v.ativa,
-       m.mes, m.producao_leite_l, m.leite_vendido_l, m.venda_leite_rs, m.receita_bruta, m.despesa_direta,
+       m.mes, m.producao_leite_l, m.leite_vendido_l, m.leite_in_natura_rs, m.venda_leite_rs, m.receita_bruta, m.despesa_direta,
        (m.receita_bruta - m.despesa_direta) AS margem_bruta
 FROM public.vw_propriedades v
 JOIN public.resumo_leite_mensal m ON m.id_propriedade = v.id_propriedade

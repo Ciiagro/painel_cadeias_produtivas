@@ -395,9 +395,9 @@ async function carregaCausas(q){
   const frase1 = `De <b>${d.de}</b> a <b>${d.mes}</b>: <b>${nf.format(mv.saidas.total)}</b> propriedade(s) pararam de lançar leite ` +
       `(no último mês de cada uma elas somavam <b class="neg">${brl2(mv.saidas.receita)}</b> de receita bruta) e <b>${nf.format(mv.entradas.total)}</b> entraram ` +
       `(<b class="pos">${brl2(mv.entradas.receita)}</b> no primeiro mês).`;
-  const fraseP = pc.media ? `Em <b>${pc.mes}</b> o preço médio recebido foi <b>R$ ${fmt(pc.media, 3)}/L</b> (venda + bonificação ÷ litros vendidos), ` +
+  const fraseP = pc.media ? `Em <b>${pc.mes}</b> o preço médio do leite foi <b>R$ ${fmt(pc.media, 2)}/L</b> (média entre as propriedades, sem bonificação, como no SisATeG), ` +
       (pc.n < 2 ? 'só há uma propriedade no filtro, então não há comparação.' : `e <b>${nf.format(pc.total_fora)}</b> de ${nf.format(pc.n)} propriedades ficaram 15% ou mais fora da média.`) : 'Sem litros vendidos no mês.';
-  const precoLista = l => l.map(x => linha(x.nome, `R$ ${fmt(x.preco, 3)}/L <span class="${x.dev>0?'pos':'neg'}">(${x.dev>0?'+':''}${fmt(x.dev,1)}%)</span>`, `${x.tecnico || ''} · ${nf.format(x.litros)} L vendidos`)).join('');
+  const precoLista = l => l.map(x => linha(x.nome, `R$ ${fmt(x.preco, 2)}/L <span class="${x.dev>0?'pos':'neg'}">(${x.dev>0?'+':''}${fmt(x.dev,1)}%)</span>`, `${x.tecnico || ''} · ${nf.format(x.litros)} L vendidos`)).join('');
   const comp = d.anterior || '';
   const tabDesp = dp.itens.map(x => { const dl = x.vm - x.va; return `<tr><td>${x.nome}</td><td class="n">${brl2(x.total)}</td><td class="n">${fmt(x.pct,1)}%</td><td class="n">${brl2(x.vm)}</td>` +
       `<td class="n ${comp ? (dl > 0 ? 'neg' : dl < 0 ? 'pos' : '') : ''}">${comp ? (dl>0?'+':dl<0?'−':'') + brl2(Math.abs(dl)) : '—'}</td></tr>`; }).join('');
@@ -415,7 +415,7 @@ async function carregaCausas(q){
   const tick = {color: css('--mut'), font: {size: 11}};
   if (pc.serie.length) charts.cp = new Chart($('cPreco'), {type: 'line',
     data: {labels: pc.serie.map(x => x.mes), datasets: [{data: pc.serie.map(x => x.preco), borderColor: css('--c-venda'), backgroundColor: css('--c-venda'), tension: .25, pointRadius: 3}]},
-    options: {maintainAspectRatio: false, animation: reduz ? false : undefined, plugins: {legend: {display: false}, tooltip: {callbacks: {label: c => 'R$ ' + fmt(c.parsed.y, 3) + '/L'}}},
+    options: {maintainAspectRatio: false, animation: reduz ? false : undefined, plugins: {legend: {display: false}, tooltip: {callbacks: {label: c => 'R$ ' + fmt(c.parsed.y, 2) + '/L'}}},
       scales: {x: {ticks: tick, grid: {display: false}}, y: {ticks: {...tick, callback: v => 'R$ ' + fmt(v, 2)}, grace: '8%'}}}});
   const top = dp.itens.slice(0, 10);
   if (top.length) charts.cd = new Chart($('cDesp'), {type: 'bar',

@@ -340,19 +340,25 @@ def causas(supervisor: str | None = None, tecnico: str | None = None, propriedad
                             "por_mes": por_mes(entradas), "lista": lista(entradas, False)}}
 
         # ---- 2) Preço do leite (venda de leite + bonificação ÷ litros vendidos)
+        # Mesmo cálculo do SisATeG: preço de cada propriedade no mês = leite in natura (R$) ÷ litros vendidos
+        # (SEM a bonificação) e, depois, a MÉDIA SIMPLES entre as propriedades.
+        por_mes_p = {}
+        for r in con.execute(text(f"""SELECT mes, id_propriedade, propriedade, tecnico, SUM(leite_in_natura_rs) AS rs, SUM(leite_vendido_l) AS l
+                 FROM {TABLE} WHERE {wsql} AND mes >= :mi AND mes <= :m AND leite_vendido_l > 0
+                 GROUP BY mes, id_propriedade, propriedade, tecnico"""), pp).mappings():
+            if r["l"] and float(r["l"]) > 0 and r["rs"] is not None:
+                por_mes_p.setdefault(r["mes"], []).append(r)
         serie_preco = []
-        for r in con.execute(text(f"""SELECT mes, SUM(venda_leite_rs) AS rs, SUM(leite_vendido_l) AS l FROM {TABLE}
-                 WHERE {wsql} AND mes >= :mi AND mes <= :m AND leite_vendido_l > 0 GROUP BY mes ORDER BY mes"""), pp).mappings():
-            if r["l"] and r["mes"] >= de_:
-                serie_preco.append({"mes": r["mes"], "preco": float(r["rs"] or 0) / float(r["l"])})
-        props = con.execute(text(f"""SELECT propriedade, tecnico, SUM(venda_leite_rs) AS rs, SUM(leite_vendido_l) AS l FROM {TABLE}
-                 WHERE {wsql} AND mes = :m AND leite_vendido_l > 0 GROUP BY id_propriedade, propriedade, tecnico"""), pp).mappings().all()
-        tot_l = sum(float(r["l"]) for r in props)
-        media = (sum(float(r["rs"] or 0) for r in props) / tot_l) if tot_l else None
+        for mes_ in sorted(por_mes_p):
+            if mes_ >= de_:
+                ps = [float(x["rs"]) / float(x["l"]) for x in por_mes_p[mes_]]
+                serie_preco.append({"mes": mes_, "preco": sum(ps) / len(ps)})
+        props = por_mes_p.get(m, [])
+        media = (sum(float(r["rs"]) / float(r["l"]) for r in props) / len(props)) if props else None
         fora = []
         if media and len(props) > 1:
             for r in props:
-                pr_ = float(r["rs"] or 0) / float(r["l"])
+                pr_ = float(r["rs"]) / float(r["l"])
                 dev = (pr_ / media - 1) * 100
                 if abs(dev) >= 15:
                     fora.append({"nome": r["propriedade"], "tecnico": r["tecnico"], "preco": pr_, "dev": round(dev, 1), "litros": float(r["l"])})
