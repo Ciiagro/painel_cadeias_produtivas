@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
   :root{
     --bg:#edf1ee; --surf:#ffffff; --ink:#15251c; --mut:#5a6a61; --linha:#dbe3de; --suave:#f5f8f6;
@@ -90,7 +91,12 @@
   .cv{position:relative;height:300px}
 
   .detalhe{background:var(--surf);border:1px solid var(--linha);border-radius:12px;padding:16px}
-  .detalhe h2{margin:0 0 10px;font-size:16px;font-weight:600}
+  .detalhe h2{margin:0;font-size:16px;font-weight:600}
+  .d-topo{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+  .d-topo .btn{margin-left:auto}
+  .btn.sec{background:var(--surf);color:var(--verde-esc);border:1px solid var(--verde);padding:8px 14px}
+  .btn.sec:hover{background:#e8f0ea}
+  .xls-msg{font-size:12.5px;color:var(--neg)}
   .rolagem{overflow:auto;max-height:70vh;border:1px solid var(--linha);border-radius:8px}
   table{width:100%;min-width:1700px;border-collapse:separate;border-spacing:0;font-size:13px}
   th,td{padding:8px 10px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--linha)}
@@ -149,7 +155,7 @@
     <section class="graf" style="--cor:var(--c-mleite)"><h2><span class="ico sm" data-ico="calc"></span>Margem bruta do leite (R$)</h2><p class="formula">Receita do leite &minus; despesa direta</p><div class="cv"><canvas id="c4"></canvas></div></section>
     <section class="graf" style="--cor:var(--c-media)"><h2><span class="ico sm" data-ico="pessoas"></span>Produção média por produtor (litros)</h2><p class="formula">Produção ÷ produtores com leite no mês</p><div class="cv"><canvas id="c5"></canvas></div></section>
   </div>
-  <section class="detalhe" id="aba-tabela" hidden><h2>Detalhe mensal</h2><div class="rolagem"><table id="tab"></table></div></section>
+  <section class="detalhe" id="aba-tabela" hidden><div class="d-topo"><h2>Detalhe mensal</h2><span class="xls-msg" id="xlsMsg"></span><button class="btn sec" id="btnXls" type="button"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M5 21h14"/></svg>Baixar Excel</button></div><div class="rolagem"><table id="tab"></table></div></section>
 </div>
 <script>
 const $ = id => document.getElementById(id);
@@ -159,6 +165,7 @@ const nf1 = {format: v => fmt(v,1)};
 const brl2 = v => 'R$ ' + fmt(v,2);
 const reduz = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
 let charts = {};
+let serieAtual = [];
 const ICONES = {
   casa:'<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/>',
   moedas:'<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/><path d="M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/>',
@@ -293,6 +300,7 @@ async function atualiza(){
   } else { $('ficha').style.display='none'; }
   for (const [k,v] of [...q]) if(!v) q.delete(k);
   const d = await (await fetch('/api/serie?'+q)).json();
+  serieAtual = d;
   const m = d.map(x=>x.mes), ult = d[d.length-1];
   const hoje = new Date(), mesAtual = hoje.getFullYear() + '-' + String(hoje.getMonth()+1).padStart(2,'0');
   const parcial = !!ult && ult.mes === mesAtual;   // último mês ainda em andamento (comparação parcial)
@@ -332,6 +340,31 @@ async function atualiza(){
 ['proj','sup','tec','mun','sit'].forEach(id => $(id).onchange = async () => { await carregaFiltros(); atualiza(); });
 ['prop','de','ate'].forEach(i=>$(i).onchange=atualiza);
 $('btnAtualiza').onclick = async()=>{ await carregaFiltros(); atualiza(); };
+// Excel da tabela mensal: usa exatamente os dados na tela, ou seja, já respeitando todos os filtros
+function baixaExcel(){
+  const msg = $('xlsMsg'); msg.textContent = '';
+  if (!window.XLSX) { msg.textContent = 'Não foi possível carregar o gerador de Excel. Verifique a internet e tente de novo.'; return; }
+  if (!serieAtual.length) { msg.textContent = 'Não há dados para o filtro escolhido.'; return; }
+  const cab = ['Mês','Propriedades com leite','Receita bruta (R$)','Var. receita','Venda de leite (R$)','Var. venda de leite','Despesa direta (R$)','Var. despesa',
+               'Produção (L)','Var. produção','Margem bruta da atividade (R$)','Var. margem atividade','Margem bruta do leite (R$)','Var. margem leite','Produção média por produtor (L)','Var. prod. média'];
+  const v = x => (x == null ? null : x / 100);
+  const linhas = serieAtual.map(x => [x.mes, x.propriedades, x.receita_bruta, v(x.var_receita_pct), x.venda_leite, v(x.var_venda_leite_pct), x.despesa_direta, v(x.var_despesa_pct),
+    x.producao, v(x.var_producao_pct), x.margem_bruta, v(x.var_margem_pct), x.margem_leite, v(x.var_margem_leite_pct), x.producao_media_produtor, v(x.var_prod_media_pct)]);
+  const ws = XLSX.utils.aoa_to_sheet([cab, ...linhas]);
+  const fmts = ['@','#,##0','#,##0.00','0.0%','#,##0.00','0.0%','#,##0.00','0.0%','#,##0.0','0.0%','#,##0.00','0.0%','#,##0.00','0.0%','#,##0.0','0.0%'];
+  linhas.forEach((l, r) => l.forEach((_, c) => { const cel = ws[XLSX.utils.encode_cell({r: r + 1, c})]; if (cel && typeof cel.v === 'number') cel.z = fmts[c]; }));
+  ws['!cols'] = cab.map((t, i) => ({wch: i === 0 ? 10 : Math.max(14, t.length + 2)}));
+  ws['!freeze'] = {xSplit: 1, ySplit: 1};
+  const txt = id => { const s = $(id); return s.value ? s.selectedOptions[0].text : (id === 'prop' ? 'Todas' : 'Todos'); };
+  const filtros = [['Filtro','Valor'], ['Projeto', txt('proj')], ['Supervisor', txt('sup')], ['Técnico', txt('tec')], ['Município', txt('mun')],
+    ['Propriedade', txt('prop')], ['Situação', txt('sit')], ['Período', $('de').value + ' a ' + $('ate').value], ['Gerado em', new Date().toLocaleString('pt-BR')]];
+  const wf = XLSX.utils.aoa_to_sheet(filtros); wf['!cols'] = [{wch: 14}, {wch: 48}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Detalhe mensal'); XLSX.utils.book_append_sheet(wb, wf, 'Filtros usados');
+  const nome = ($('titulo').textContent || 'painel').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 40);
+  XLSX.writeFile(wb, `acompanhamento_${nome}_${$('de').value}_a_${$('ate').value}.xlsx`);
+}
+$('btnXls').onclick = baixaExcel;
 function mostraAba(nome){
   const alvos = {graficos:'aba-graficos', destaques:'destaques', tabela:'aba-tabela'};
   Object.entries(alvos).forEach(([n, id]) => { $(id).hidden = (n !== nome); });
