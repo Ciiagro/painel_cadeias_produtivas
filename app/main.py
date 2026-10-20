@@ -47,7 +47,7 @@ def index(request: Request):
     return templates.TemplateResponse(request, "index.html")
 
 
-def _where(supervisor=None, tecnico=None, projeto=None, propriedade=None):
+def _where(supervisor=None, tecnico=None, projeto=None, propriedade=None, situacao=None):
     """Monta WHERE + parâmetros para os filtros (mesmas colunas nas duas views)."""
     w, p = ["1=1"], {}
     if supervisor:
@@ -58,11 +58,16 @@ def _where(supervisor=None, tecnico=None, projeto=None, propriedade=None):
         w.append("projeto = :pj"); p["pj"] = projeto
     if propriedade:
         w.append("id_propriedade = :pr"); p["pr"] = propriedade
+    if situacao == "ativa":
+        w.append("ativa")
+    elif situacao == "inativa":
+        w.append("NOT ativa")
     return w, p
 
 
 @app.get("/api/filtros")
-def filtros(supervisor: str | None = None, tecnico: str | None = None, projeto: str | None = None):
+def filtros(supervisor: str | None = None, tecnico: str | None = None, projeto: str | None = None,
+            situacao: str | None = None):
     """Listas dos filtros. Cada lista respeita os OUTROS filtros já escolhidos."""
     with engine.connect() as con:
         def lista(coluna, **outros):
@@ -70,10 +75,10 @@ def filtros(supervisor: str | None = None, tecnico: str | None = None, projeto: 
             w.append(f"{coluna} IS NOT NULL")
             return [r[0] for r in con.execute(text(
                 f"SELECT DISTINCT {coluna} FROM {TABLE} WHERE {' AND '.join(w)} ORDER BY 1"), p)]
-        projetos = lista("projeto", supervisor=supervisor, tecnico=tecnico)
-        sups = lista("supervisor", projeto=projeto)
-        tecs = lista("tecnico", supervisor=supervisor, projeto=projeto)
-        w2, p2 = _where(supervisor, tecnico, projeto)
+        projetos = lista("projeto", supervisor=supervisor, tecnico=tecnico, situacao=situacao)
+        sups = lista("supervisor", projeto=projeto, situacao=situacao)
+        tecs = lista("tecnico", supervisor=supervisor, projeto=projeto, situacao=situacao)
+        w2, p2 = _where(supervisor, tecnico, projeto, None, situacao)
         props = [{"id": r[0], "nome": r[1]} for r in con.execute(text(
             f"SELECT DISTINCT id_propriedade, COALESCE(propriedade, 'Propriedade ' || id_propriedade) "
             f"FROM {TABLE} WHERE {' AND '.join(w2)} ORDER BY 2"), p2)]
@@ -104,9 +109,9 @@ def propriedade(id_propriedade: int):
 
 @app.get("/api/serie")
 def serie(supervisor: str | None = None, tecnico: str | None = None, propriedade: int | None = None,
-          projeto: str | None = None,
+          projeto: str | None = None, situacao: str | None = None,
           de: str | None = Query(None, description="YYYY-MM"), ate: str | None = Query(None, description="YYYY-MM")):
-    where, p = _where(supervisor, tecnico, projeto, propriedade)
+    where, p = _where(supervisor, tecnico, projeto, propriedade, situacao)
     p["de"] = max(de or MES_INICIO, MES_INICIO)
     where.append("mes >= :de")
     if ate:
@@ -124,7 +129,8 @@ def serie(supervisor: str | None = None, tecnico: str | None = None, propriedade
         FROM {TABLE} WHERE {' AND '.join(where)}
         GROUP BY mes ORDER BY mes"""
     wp, pp = _where(supervisor, tecnico, projeto, propriedade)
-    wp.append("ativa")  # o card 'Propriedades ativas' conta só as ativas hoje
+    # o card conta as propriedades ativas hoje; no filtro 'Inativas' conta as inativas
+    wp.append("NOT ativa" if situacao == "inativa" else "ativa")
     with engine.connect() as con:
         rows = [dict(r._mapping) for r in con.execute(text(sql), p)]
         total_props = con.execute(text(f"SELECT COUNT(DISTINCT id_propriedade) FROM {PROPS} WHERE {' AND '.join(wp)}"), pp).scalar()
