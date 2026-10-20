@@ -4,75 +4,183 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Acompanhamento mensal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
-  :root{--bg:#f4f7f4;--card:#fff;--ink:#1d2b22;--mut:#5d6b62;--verde:#2e7d32;--azul:#1565c0;--laranja:#ef6c00;--bd:#dfe6e0}
-  *{box-sizing:border-box} body{margin:0;font:15px/1.4 system-ui,Segoe UI,Arial;background:var(--bg);color:var(--ink)}
-  header{padding:18px 20px;background:var(--verde);color:#fff} h1{margin:0;font-size:20px} header p{margin:4px 0 0;opacity:.9}
-  main{max-width:1200px;margin:0 auto;padding:16px}
-  .filtros{display:flex;flex-wrap:wrap;gap:12px;background:var(--card);padding:12px;border:1px solid var(--bd);border-radius:10px}
-  label{display:flex;flex-direction:column;font-size:12px;color:var(--mut);gap:4px;min-width:220px;flex:1}
-  select{padding:8px;border:1px solid var(--bd);border-radius:8px;font-size:14px}
-  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin:14px 0}
-  .kpi{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:12px}
-  .kpi b{display:block;font-size:22px} .kpi span{font-size:12px;color:var(--mut)}
-  .graf{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:12px;margin-bottom:14px}
-  .graf h2{margin:0 0 8px;font-size:15px} canvas{max-height:280px}
-  table{width:100%;border-collapse:collapse;font-size:13px;background:var(--card)} th,td{padding:6px 8px;border-bottom:1px solid var(--bd);text-align:right} th:first-child,td:first-child{text-align:left}
-  .pos{color:var(--verde)} .neg{color:#c62828}
-  @media(max-width:600px){label{min-width:100%}}
+  :root{
+    --bg:#edf1ee; --surf:#ffffff; --ink:#15251c; --mut:#5a6a61; --linha:#dbe3de; --suave:#f5f8f6;
+    --verde:#1d6b45; --verde-esc:#134a2f; --pos:#1d6b45; --neg:#b3261e;
+    --c-receita:#1d6b45; --c-venda:#0b7a80; --c-prod:#2b59a8; --c-media:#7a5ba6; --c-mat:#c9730a; --c-mleite:#a23b72; --c-neutro:#4a5d52;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0;font:15px/1.45 'IBM Plex Sans',system-ui,Segoe UI,Arial,sans-serif;background:var(--bg);color:var(--ink);font-variant-numeric:tabular-nums}
+  :focus-visible{outline:3px solid #f0b429;outline-offset:2px;border-radius:6px}
+
+  .faixa{background:linear-gradient(90deg,var(--verde-esc),var(--verde));color:#fff;padding:16px 30px;display:flex;align-items:center;gap:16px}
+  .logo{width:54px;height:54px;flex:none}
+  .faixa h1{margin:0;font-size:26px;line-height:1.15;font-weight:700;letter-spacing:-.01em}
+  .faixa p{margin:2px 0 0;font-size:13.5px;opacity:.92}
+  .atividade{margin-left:auto;display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px;background:rgba(255,255,255,.14);padding:8px 14px;border-radius:999px}
+
+  .corpo{padding:18px 30px 48px;max-width:2200px;margin:0 auto}
+  .filtros{background:var(--surf);border:1px solid var(--linha);border-radius:12px;padding:12px 16px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr)) minmax(250px,1.1fr) auto;gap:14px;align-items:end;margin-bottom:16px;position:sticky;top:8px;z-index:20;box-shadow:0 4px 14px rgba(20,40,28,.08)}
+  .filtros label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;font-weight:500;color:var(--mut);min-width:0}
+  .periodo{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:end}
+  .periodo i{font-style:normal;color:var(--mut);padding-bottom:9px}
+  select{width:100%;padding:9px 10px;border:1px solid var(--linha);border-radius:8px;font:inherit;font-size:14px;color:var(--ink);background:var(--suave);min-width:0}
+  select:hover{border-color:#b9c6bf}
+  .btn{display:flex;align-items:center;gap:8px;padding:10px 18px;border:0;border-radius:8px;background:var(--verde-esc);color:#fff;font:inherit;font-weight:600;cursor:pointer}
+  .btn:hover{background:var(--verde)}
+
+  .escopo{margin:4px 2px 14px}
+  .escopo h2{margin:0;font-size:22px;line-height:1.2;font-weight:700}
+  .escopo p{margin:2px 0 0;color:var(--mut);font-size:13.5px}
+
+  .ficha{background:var(--surf);border:1px solid var(--linha);border-radius:12px;padding:16px 18px;margin-bottom:16px;display:flex;gap:16px;align-items:flex-start}
+  .ficha h3{margin:0 0 8px;font-size:17px}
+  .ficha dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px 18px;margin:0;font-size:13.5px}
+  .ficha dt{color:var(--mut);font-size:12px} .ficha dd{margin:0;font-weight:500}
+  .ficha .f-corpo{flex:1;min-width:0}
+
+  .ico{width:44px;height:44px;border-radius:50%;flex:none;display:grid;place-items:center;color:var(--cor,var(--verde));background:#e8f0ea;background:color-mix(in srgb,var(--cor,var(--verde)) 14%,white)}
+  .ico svg{width:22px;height:22px}
+  .ico.sm{width:32px;height:32px} .ico.sm svg{width:18px;height:18px}
+
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(196px,1fr));gap:12px;margin-bottom:18px}
+  .kpi{background:var(--surf);border:1px solid var(--linha);border-radius:12px;padding:12px 14px 10px;display:grid;grid-template-columns:auto 1fr;gap:2px 12px;align-items:center}
+  .kpi .ico{grid-row:1 / span 3;width:38px;height:38px} .kpi .ico svg{width:20px;height:20px}
+  .k-rot{font-size:13px;color:var(--mut);font-weight:500;line-height:1.25}
+  .kpi b{font-size:22px;line-height:1.15;font-weight:700;letter-spacing:-.01em}
+  .k-var{font-size:12.5px;color:var(--mut);min-height:18px}
+  .spark{grid-column:1 / -1;display:block;width:100%;height:28px;margin-top:6px}
+  .parc{background:#fff3d6;color:#7a5200;padding:1px 7px;border-radius:999px;font-weight:500}
+  .pos{color:var(--pos);font-weight:600} .neg{color:var(--neg);font-weight:600}
+
+  .graficos{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-bottom:20px}
+  .graf{background:var(--surf);border:1px solid var(--linha);border-radius:12px;padding:14px 16px 10px;min-width:0}
+  .graf h2{margin:0;font-size:16px;font-weight:600;display:flex;align-items:center;gap:10px;color:var(--cor)}
+  .graf .formula{margin:4px 0 6px 42px;font-size:12.5px;color:var(--mut)}
+  .cv{position:relative;height:300px}
+
+  .detalhe{background:var(--surf);border:1px solid var(--linha);border-radius:12px;padding:16px}
+  .detalhe h2{margin:0 0 10px;font-size:16px;font-weight:600}
+  .rolagem{overflow:auto;max-height:70vh;border:1px solid var(--linha);border-radius:8px}
+  table{width:100%;min-width:1500px;border-collapse:separate;border-spacing:0;font-size:13px}
+  th,td{padding:8px 10px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--linha)}
+  thead th{position:sticky;background:var(--suave);font-weight:600;z-index:2}
+  thead tr:first-child th{top:0}
+  thead tr:nth-child(2) th{top:34px;font-weight:500;color:var(--mut);font-size:12px}
+  th.g{text-align:center;border-left:1px solid var(--linha)}
+  td.sep,th.sep{border-left:1px solid var(--linha)}
+  th:first-child,td:first-child{text-align:left;position:sticky;left:0;background:var(--surf);z-index:1;border-right:1px solid var(--linha)}
+  thead th:first-child{background:var(--suave);z-index:3}
+  tbody tr:hover td{background:#f0f6f2}
+
+  @media(max-width:1250px){.filtros{grid-template-columns:repeat(2,minmax(0,1fr))}.periodo{grid-column:1 / -1}.btn{justify-content:center}}
+  @media(max-width:1100px){.graficos{grid-template-columns:1fr}}
+  @media(max-width:700px){
+    .faixa{padding:14px 16px;flex-wrap:wrap} .faixa h1{font-size:20px} .atividade{margin-left:0}
+    .corpo{padding:14px 14px 36px} .filtros{position:static;grid-template-columns:1fr}
+    .ficha{flex-direction:column}
+  }
+  @media(min-width:1900px){.graficos{grid-template-columns:repeat(3,minmax(0,1fr))}}
 </style>
 </head>
 <body>
-<header><h1>Acompanhamento mensal</h1><p>Receita bruta, produção e margem bruta por supervisor e técnico</p></header>
-<main>
+<header class="faixa">
+  <svg class="logo" viewBox="0 0 64 64" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 30 32 10l24 20"/><path d="M14 27v24h36V27"/><path d="M26 51V37h12v14"/><path d="M32 8c4-5 10-5 12-3-1 5-6 7-12 3z"/></svg>
+  <div><h1>Acompanhamento mensal</h1><p>ATEG &middot; Mais conhecimento, melhores resultados</p></div>
+  <div class="atividade"><span>Bovinocultura de leite</span></div>
+</header>
+<div class="corpo">
   <div class="filtros">
     <label>Projeto<select id="proj"><option value="">Todos</option></select></label>
     <label>Supervisor<select id="sup"><option value="">Todos</option></select></label>
     <label>Técnico<select id="tec"><option value="">Todos</option></select></label>
     <label>Propriedade<select id="prop"><option value="">Todas</option></select></label>
-    <label>De<select id="de"></select></label>
-    <label>Até<select id="ate"></select></label>
+    <div class="periodo">
+      <label>De<select id="de"></select></label><i>&rarr;</i><label>Até<select id="ate"></select></label>
+    </div>
+    <button class="btn" id="btnAtualiza" type="button"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 11-3-6.7"/><path d="M21 3v6h-6"/></svg>Atualizar</button>
   </div>
-  <div class="graf" id="ficha" style="display:none"></div>
+  <div class="escopo"><h2 id="titulo">Todas as propriedades</h2><p id="periodo"></p></div>
+  <div class="ficha" id="ficha" style="display:none"></div>
   <div class="kpis" id="kpis"></div>
-  <div class="graf"><h2>Receita bruta (R$)</h2><canvas id="c1"></canvas></div>
-  <div class="graf"><h2>Venda de leite (R$) = leite in natura + bonificação por qualidade</h2><canvas id="c6"></canvas></div>
-  <div class="graf"><h2>Produção de leite (litros)</h2><canvas id="c2"></canvas></div>
-  <div class="graf"><h2>Margem bruta da atividade (R$) = receita bruta − despesa direta</h2><canvas id="c3"></canvas></div>
-  <div class="graf"><h2>Margem bruta do leite (R$) = receita do leite − despesa direta</h2><canvas id="c4"></canvas></div>
-  <div class="graf"><h2>Produção média por produtor (litros)</h2><canvas id="c5"></canvas></div>
-  <div class="graf"><h2>Detalhe mensal</h2><div style="overflow:auto"><table id="tab"></table></div></div>
-</main>
+  <div class="graficos">
+    <section class="graf" style="--cor:var(--c-receita)"><h2><span class="ico sm" data-ico="moedas"></span>Receita bruta (R$)</h2><p class="formula">Tudo que entrou na atividade, sem empréstimo nem investimento</p><div class="cv"><canvas id="c1"></canvas></div></section>
+    <section class="graf" style="--cor:var(--c-venda)"><h2><span class="ico sm" data-ico="garrafa"></span>Venda de leite (R$)</h2><p class="formula">Leite in natura + bonificação por qualidade</p><div class="cv"><canvas id="c6"></canvas></div></section>
+    <section class="graf" style="--cor:var(--c-prod)"><h2><span class="ico sm" data-ico="gota"></span>Produção de leite (litros)</h2><p class="formula">Vendido + consumido + bezerras</p><div class="cv"><canvas id="c2"></canvas></div></section>
+    <section class="graf" style="--cor:var(--c-mat)"><h2><span class="ico sm" data-ico="barras"></span>Margem bruta da atividade (R$)</h2><p class="formula">Receita bruta &minus; despesa direta</p><div class="cv"><canvas id="c3"></canvas></div></section>
+    <section class="graf" style="--cor:var(--c-mleite)"><h2><span class="ico sm" data-ico="calc"></span>Margem bruta do leite (R$)</h2><p class="formula">Receita do leite &minus; despesa direta</p><div class="cv"><canvas id="c4"></canvas></div></section>
+    <section class="graf" style="--cor:var(--c-media)"><h2><span class="ico sm" data-ico="pessoas"></span>Produção média por produtor (litros)</h2><p class="formula">Produção ÷ produtores com leite no mês</p><div class="cv"><canvas id="c5"></canvas></div></section>
+  </div>
+  <section class="detalhe"><h2>Detalhe mensal</h2><div class="rolagem"><table id="tab"></table></div></section>
+</div>
 <script>
 const $ = id => document.getElementById(id);
+const fmt = (v,c) => new Intl.NumberFormat('pt-BR',{minimumFractionDigits:c,maximumFractionDigits:c}).format(v);
 const nf = new Intl.NumberFormat('pt-BR',{maximumFractionDigits:0});
-const brl = v => 'R$ ' + nf.format(v);
-const nf1 = new Intl.NumberFormat('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1});
-const brl2 = v => 'R$ ' + new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v);
+const nf1 = {format: v => fmt(v,1)};
+const brl2 = v => 'R$ ' + fmt(v,2);
+const reduz = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
 let charts = {};
-// Escreve o valor de cada mês em cima do ponto (se houver muitos meses, mostra de N em N para não embolar)
+const ICONES = {
+  casa:'<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/>',
+  moedas:'<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/><path d="M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/>',
+  garrafa:'<path d="M9 2h6"/><path d="M10 2v4l-2 3v11a2 2 0 002 2h4a2 2 0 002-2V9l-2-3V2"/><path d="M8 13h8"/>',
+  gota:'<path d="M12 3s6 6.5 6 11a6 6 0 01-12 0c0-4.5 6-11 6-11z"/>',
+  pessoas:'<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 5a3 3 0 010 6"/><path d="M18 14c2 .8 3 2.6 3 6"/>',
+  barras:'<path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-8"/><path d="M22 20H2"/>',
+  calc:'<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8"/><path d="M8 12h.01M12 12h.01M16 12h.01M8 16h.01M12 16h.01M16 16h.01"/>'
+};
+const svgIco = n => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONES[n]}</svg>`;
+const icoGrande = (n, cor) => `<span class="ico" style="--cor:${cor}">${svgIco(n)}</span>`;
+document.querySelectorAll('[data-ico]').forEach(el => el.innerHTML = svgIco(el.dataset.ico));
+
+// Valor em cima de cada ponto; a quantidade de rótulos se ajusta à largura do gráfico (sempre inclui o último mês)
 const rotulosValores = {id:'rotulosValores', afterDatasetsDraw(chart){
   const {ctx} = chart, meta = chart.getDatasetMeta(0), dados = chart.data.datasets[0].data, n = dados.length;
-  const passo = Math.max(1, Math.ceil(n/12));
-  ctx.save(); ctx.font = '600 11px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-  ctx.fillStyle = getComputedStyle(document.body).color || '#222';
+  const c = chart.options.casas || 0;
+  const maxRot = Math.max(2, Math.floor(chart.chartArea.width / (c ? 120 : 86)));
+  const passo = Math.max(1, Math.ceil(n / maxRot));
+  ctx.save(); ctx.font = "600 11px 'IBM Plex Sans', system-ui, sans-serif"; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+  ctx.fillStyle = '#15251c';
   meta.data.forEach((pt, i) => {
-    if (i % passo !== 0 && i !== n-1) return;
+    if ((n - 1 - i) % passo !== 0) return;
     const v = dados[i]; if (v == null) return;
-    const c = chart.options.casas || 0;
-    ctx.fillText(new Intl.NumberFormat('pt-BR',{minimumFractionDigits:c,maximumFractionDigits:c}).format(v), pt.x, pt.y - 7);
+    ctx.fillText(fmt(v, c), pt.x, pt.y - 8);
   });
   ctx.restore();
 }};
-function desenha(id, rotulos, valores, cor, casas=0){
-  if(charts[id]) charts[id].destroy();
+
+function desenha(id, rotulos, valores, cor, casas, moeda, parcial, aceitaNegativo){
+  if (charts[id]) charts[id].destroy();
+  const n = valores.length;
   charts[id] = new Chart($(id), {type:'line', plugins:[rotulosValores],
-    data:{labels:rotulos, datasets:[{data:valores, borderColor:cor, backgroundColor:cor+'22', fill:true, tension:.25}]},
-    options:{casas, layout:{padding:{top:22,right:14}}, plugins:{legend:{display:false}}, scales:{y:{grace:'8%', ticks:{callback:v=>nf.format(v)}}}}});
+    data:{labels:rotulos, datasets:[{data:valores, borderColor:cor, backgroundColor:cor+'1f', fill:true, tension:.25,
+      borderWidth:2, pointRadius:3, pointHoverRadius:5, pointBackgroundColor:cor,
+      segment:{borderDash: c => (parcial && c.p1DataIndex === n-1) ? [6,5] : undefined}}]},
+    options:{casas, responsive:true, maintainAspectRatio:false, animation: reduz ? false : undefined,
+      interaction:{mode:'index', intersect:false},
+      layout:{padding:{top:26, right:34, left:4}},
+      plugins:{legend:{display:false}, tooltip:{callbacks:{label: c => moeda ? 'R$ ' + fmt(c.parsed.y, casas) : fmt(c.parsed.y, casas) + ' L'}}},
+      scales:{
+        x:{grid:{display:false}, ticks:{maxRotation:0, autoSkip:true, maxTicksLimit:12,
+           callback(val){ const l = this.getLabelForValue(val); return l.slice(5) + '/' + l.slice(2,4); }}},
+        y:{beginAtZero: !aceitaNegativo, grace:'8%', grid:{color:'#e6ece8'}, ticks:{callback:v=>nf.format(v)}}}}});
 }
+
 const pct = v => v==null ? '–' : `<span class="${v>=0?'pos':'neg'}">${v>0?'+':''}${v.toLocaleString('pt-BR')}%</span>`;
-function preenche(sel, itens, rotuloTodos){
+function spark(v, cor){
+  v = v.filter(x => x != null); if (v.length < 2) return '';
+  const w = 120, h = 30, mn = Math.min(...v), mx = Math.max(...v), r = (mx - mn) || 1;
+  const pts = v.map((y,i) => ((i/(v.length-1))*w).toFixed(1) + ',' + (h-3-((y-mn)/r)*(h-6)).toFixed(1)).join(' ');
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><polyline fill="none" stroke="${cor}" stroke-width="1.8" vector-effect="non-scaling-stroke" points="${pts}"/></svg>`;
+}
+function preenche(sel, itens){
   const atual = sel.value; sel.length = 1;
   itens.forEach(v=>sel.add(new Option(v,v)));
   sel.value = itens.includes(atual) ? atual : '';
@@ -86,41 +194,61 @@ async function carregaFiltros(){
 }
 async function atualiza(){
   const q = new URLSearchParams({projeto:$('proj').value, supervisor:$('sup').value, tecnico:$('tec').value, propriedade:$('prop').value, de:$('de').value, ate:$('ate').value});
+  // título da tela: o recorte escolhido nos filtros
+  const escopo = $('prop').value ? $('prop').selectedOptions[0].text : ($('tec').value || $('sup').value || $('proj').value || 'Todas as propriedades');
+  $('titulo').textContent = escopo;
+  $('periodo').textContent = 'Período: ' + $('de').value + ' a ' + $('ate').value;
   if($('prop').value){
     const p = await (await fetch('/api/propriedade/'+$('prop').value)).json();
     const dt = v => v ? v.split('-').reverse().join('/') : '–';
     const tempo = m => { if (m==null) return '–'; const a=Math.floor(m/12), r=m%12; return (a?a+(a>1?' anos':' ano'):'')+(a&&r?' e ':'')+((r||!a)?r+(r===1?' mês':' meses'):''); };
-    $('ficha').style.display='block';
-    $('ficha').innerHTML = `<h2>${p.propriedade||''}</h2><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:6px;font-size:13px">
-      <div><b>Produtor:</b> ${p.produtor||'–'}</div><div><b>Técnico:</b> ${p.tecnico||'–'}</div><div><b>Supervisor:</b> ${p.supervisor||'–'}</div>
-      <div><b>Município:</b> ${p.municipio||'–'}/${p.uf||''}</div><div><b>Projeto:</b> ${p.projeto||'–'}</div>
-      <div><b>Início no projeto:</b> ${dt(p.inicio_projeto)}</div><div><b>Fim no projeto:</b> ${p.fim_projeto?dt(p.fim_projeto):'em andamento'}</div>
-      <div><b>Tempo no projeto:</b> ${tempo(p.tempo_projeto_meses)}</div><div><b>Situação:</b> ${p.status_vinculo||'–'}</div><div><b>Área total / produtiva:</b> ${p.area_total??'–'} / ${p.area_produtiva!=null?(+p.area_produtiva).toFixed(2):'–'} ha</div></div>`;
+    $('ficha').style.display='flex';
+    $('ficha').innerHTML = `${icoGrande('casa','var(--verde)')}<div class="f-corpo"><h3>${p.propriedade||''}</h3><dl>
+      <div><dt>Produtor</dt><dd>${p.produtor||'–'}</dd></div><div><dt>Técnico</dt><dd>${p.tecnico||'–'}</dd></div><div><dt>Supervisor</dt><dd>${p.supervisor||'–'}</dd></div>
+      <div><dt>Município</dt><dd>${p.municipio||'–'}/${p.uf||''}</dd></div><div><dt>Projeto</dt><dd>${p.projeto||'–'}</dd></div>
+      <div><dt>Início no projeto</dt><dd>${dt(p.inicio_projeto)}</dd></div><div><dt>Fim no projeto</dt><dd>${p.fim_projeto?dt(p.fim_projeto):'em andamento'}</dd></div>
+      <div><dt>Tempo no projeto</dt><dd>${tempo(p.tempo_projeto_meses)}</dd></div><div><dt>Situação</dt><dd>${p.status_vinculo||'–'}</dd></div><div><dt>Área total / produtiva</dt><dd>${p.area_total??'–'} / ${p.area_produtiva!=null?(+p.area_produtiva).toFixed(2):'–'} ha</dd></div></dl></div>`;
   } else { $('ficha').style.display='none'; }
   for (const [k,v] of [...q]) if(!v) q.delete(k);
   const d = await (await fetch('/api/serie?'+q)).json();
   const m = d.map(x=>x.mes), ult = d[d.length-1];
-  $('kpis').innerHTML = ult ? `
-    <div class="kpi"><span>Propriedades ativas</span><b>${nf.format(ult.propriedades_total)}</b><small>${nf.format(ult.propriedades)} com leite lançado em ${ult.mes}</small></div>
-    <div class="kpi"><span>Receita bruta (${ult.mes})</span><b>${brl2(ult.receita_bruta)}</b>${pct(ult.var_receita_pct)} vs mês anterior</div>
-    <div class="kpi"><span>Venda de leite c/ bonificação (${ult.mes})</span><b>${brl2(ult.venda_leite)}</b>${pct(ult.var_venda_leite_pct)} vs mês anterior</div>
-    <div class="kpi"><span>Produção (${ult.mes})</span><b>${nf1.format(ult.producao)} L</b>${pct(ult.var_producao_pct)} vs mês anterior</div>
-    <div class="kpi"><span>Margem bruta da atividade (${ult.mes})</span><b>${brl2(ult.margem_bruta)}</b>${pct(ult.var_margem_pct)} vs mês anterior</div>
-    <div class="kpi"><span>Margem bruta do leite (${ult.mes})</span><b>${brl2(ult.margem_leite)}</b>${pct(ult.var_margem_leite_pct)} vs mês anterior</div>
-    <div class="kpi"><span>Produção média por produtor (${ult.mes})</span><b>${nf1.format(ult.producao_media_produtor)} L</b>${pct(ult.var_prod_media_pct)} vs mês anterior</div>` : '<p>Sem dados para o filtro.</p>';
-  desenha('c1', m, d.map(x=>x.receita_bruta), '#2e7d32', 2);
-  desenha('c6', m, d.map(x=>x.venda_leite), '#00695c', 2);
-  desenha('c2', m, d.map(x=>x.producao), '#1565c0', 1);
-  desenha('c3', m, d.map(x=>x.margem_bruta), '#ef6c00', 2);
-  desenha('c4', m, d.map(x=>x.margem_leite), '#6a1b9a', 2);
-  desenha('c5', m, d.map(x=>x.producao_media_produtor), '#00838f', 1);
-  $('tab').innerHTML = '<tr><th>Mês</th><th>Com leite lançado</th><th>Receita bruta</th><th>Var.</th><th>Venda de leite (R$)</th><th>Var.</th><th>Produção (L)</th><th>Var.</th><th>Margem bruta da atividade</th><th>Var.</th><th>Margem bruta do leite</th><th>Var.</th><th>Prod. média/produtor (L)</th><th>Var.</th></tr>' +
-    d.map(x=>`<tr><td>${x.mes}</td><td>${nf.format(x.propriedades)}</td><td>${brl2(x.receita_bruta)}</td><td>${pct(x.var_receita_pct)}</td><td>${brl2(x.venda_leite)}</td><td>${pct(x.var_venda_leite_pct)}</td><td>${nf1.format(x.producao)}</td><td>${pct(x.var_producao_pct)}</td><td>${brl2(x.margem_bruta)}</td><td>${pct(x.var_margem_pct)}</td><td>${brl2(x.margem_leite)}</td><td>${pct(x.var_margem_leite_pct)}</td><td>${nf1.format(x.producao_media_produtor)}</td><td>${pct(x.var_prod_media_pct)}</td></tr>`).join('');
+  const hoje = new Date(), mesAtual = hoje.getFullYear() + '-' + String(hoje.getMonth()+1).padStart(2,'0');
+  const parcial = !!ult && ult.mes === mesAtual;   // último mês ainda em andamento (comparação parcial)
+  const semParcial = a => parcial ? a.slice(0, -1) : a;
+  const cartao = (rot, valor, variacao, serie, cor, ic) =>
+    `<div class="kpi">${icoGrande(ic, cor)}<span class="k-rot">${rot}</span><b>${valor}</b><div class="k-var">${parcial ? '<span class="parc">mês em andamento</span>' : (variacao===undefined ? '' : pct(variacao) + ' vs mês anterior')}</div>${spark(semParcial(serie), cor)}</div>`;
+  $('kpis').innerHTML = ult ? [
+    `<div class="kpi">${icoGrande('casa','var(--c-neutro)')}<span class="k-rot">Propriedades ativas</span><b>${nf.format(ult.propriedades_total)}</b><div class="k-var">${nf.format(ult.propriedades)} com leite lançado em ${ult.mes}</div>${spark(semParcial(d.map(x=>x.propriedades)),'#4a5d52')}</div>`,
+    cartao(`Receita bruta (${ult.mes})`, brl2(ult.receita_bruta), ult.var_receita_pct, d.map(x=>x.receita_bruta), 'var(--c-receita)', 'moedas'),
+    cartao(`Venda de leite c/ bonificação (${ult.mes})`, brl2(ult.venda_leite), ult.var_venda_leite_pct, d.map(x=>x.venda_leite), 'var(--c-venda)', 'garrafa'),
+    cartao(`Produção (${ult.mes})`, nf1.format(ult.producao) + ' L', ult.var_producao_pct, d.map(x=>x.producao), 'var(--c-prod)', 'gota'),
+    cartao(`Produção média por produtor (${ult.mes})`, nf1.format(ult.producao_media_produtor) + ' L', ult.var_prod_media_pct, d.map(x=>x.producao_media_produtor), 'var(--c-media)', 'pessoas'),
+    cartao(`Margem bruta da atividade (${ult.mes})`, brl2(ult.margem_bruta), ult.var_margem_pct, d.map(x=>x.margem_bruta), 'var(--c-mat)', 'barras'),
+    cartao(`Margem bruta do leite (${ult.mes})`, brl2(ult.margem_leite), ult.var_margem_leite_pct, d.map(x=>x.margem_leite), 'var(--c-mleite)', 'calc')
+  ].join('') : '<p>Sem dados para o filtro.</p>';
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  desenha('c1', m, d.map(x=>x.receita_bruta), css('--c-receita'), 2, true, parcial);
+  desenha('c6', m, d.map(x=>x.venda_leite), css('--c-venda'), 2, true, parcial);
+  desenha('c3', m, d.map(x=>x.margem_bruta), css('--c-mat'), 2, true, parcial, true);
+  desenha('c4', m, d.map(x=>x.margem_leite), css('--c-mleite'), 2, true, parcial, true);
+  desenha('c2', m, d.map(x=>x.producao), css('--c-prod'), 1, false, parcial);
+  desenha('c5', m, d.map(x=>x.producao_media_produtor), css('--c-media'), 1, false, parcial);
+  const grupos = ['Receita bruta','Venda de leite','Produção (L)','Margem da atividade','Margem do leite','Prod. média/produtor (L)'];
+  $('tab').innerHTML = '<thead><tr><th rowspan="2">Mês</th><th rowspan="2" class="sep">Com leite</th>' +
+    grupos.map(g=>`<th class="g" colspan="2">${g}</th>`).join('') + '</tr><tr>' + grupos.map(()=>'<th class="sep">Valor</th><th>Var.</th>').join('') + '</tr></thead><tbody>' +
+    d.map(x=>`<tr><td>${x.mes}</td><td class="sep">${nf.format(x.propriedades)}</td>`+
+      `<td class="sep">${brl2(x.receita_bruta)}</td><td>${pct(x.var_receita_pct)}</td>`+
+      `<td class="sep">${brl2(x.venda_leite)}</td><td>${pct(x.var_venda_leite_pct)}</td>`+
+      `<td class="sep">${nf1.format(x.producao)}</td><td>${pct(x.var_producao_pct)}</td>`+
+      `<td class="sep">${brl2(x.margem_bruta)}</td><td>${pct(x.var_margem_pct)}</td>`+
+      `<td class="sep">${brl2(x.margem_leite)}</td><td>${pct(x.var_margem_leite_pct)}</td>`+
+      `<td class="sep">${nf1.format(x.producao_media_produtor)}</td><td>${pct(x.var_prod_media_pct)}</td></tr>`).join('') + '</tbody>';
 }
 $('proj').onchange = async()=>{ $('prop').value=''; await carregaFiltros(); atualiza(); };
 $('sup').onchange = async()=>{ $('tec').value=''; $('prop').value=''; await carregaFiltros(); atualiza(); };
 $('tec').onchange = async()=>{ $('prop').value=''; await carregaFiltros(); atualiza(); };
 ['prop','de','ate'].forEach(i=>$(i).onchange=atualiza);
+$('btnAtualiza').onclick = async()=>{ await carregaFiltros(); atualiza(); };
 carregaFiltros().then(atualiza);
 </script>
 </body>
