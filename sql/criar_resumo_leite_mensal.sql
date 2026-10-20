@@ -11,7 +11,7 @@
 --   venda_leite_rs = leite vendido (in natura) + Bonificação do leite por qualidade (receita do leite)
 --   receita_bruta  = leite vendido (+ bonificação), venda de animal, esterco, volumoso e outras receitas;
 --                    NÃO conta empréstimo, venda de bem, nem os itens de preço do leite
---   despesa_direta = despesas menos aquisição de bem, empréstimo, "Mão de obra familiar" e "Aleitamento artificial"
+--   despesa_direta = despesas menos aquisição de bem, empréstimo, "Mão de obra familiar", "Aleitamento artificial" e "Despesas com Formação de Forrageiras perene"
 --   producao_leite_l = leite vendido + consumido (mão de obra familiar) + leite para bezerras
 -- =====================================================================
 
@@ -135,7 +135,7 @@ fin AS (
          AND subgrupo NOT ILIKE 'Empr%' AND subgrupo NOT ILIKE 'Investimento%') AS despesa_total,
     SUM(valor) FILTER (WHERE grupo = 'Despesa'
          AND subgrupo NOT ILIKE 'Empr%' AND subgrupo NOT ILIKE 'Investimento%'
-         AND subgrupo NOT ILIKE 'Aleitamento%' AND item NOT ILIKE 'M_o de obra familiar') AS despesa_direta,
+         AND subgrupo NOT ILIKE 'Aleitamento%' AND subgrupo NOT ILIKE 'Despesas com Forma%' AND item NOT ILIKE 'M_o de obra familiar') AS despesa_direta,
     SUM(valor) FILTER (WHERE grupo = 'Despesa' AND item ILIKE 'M_o de obra familiar') AS mao_obra_familiar,
     SUM(valor) FILTER (WHERE grupo = 'Despesa' AND subgrupo ILIKE 'Aleitamento%') AS despesa_aleitamento
   FROM v GROUP BY 1,2
