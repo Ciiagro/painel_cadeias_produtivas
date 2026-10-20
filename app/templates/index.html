@@ -68,7 +68,7 @@
   .detalhe{background:var(--surf);border:1px solid var(--linha);border-radius:12px;padding:16px}
   .detalhe h2{margin:0 0 10px;font-size:16px;font-weight:600}
   .rolagem{overflow:auto;max-height:70vh;border:1px solid var(--linha);border-radius:8px}
-  table{width:100%;min-width:1500px;border-collapse:separate;border-spacing:0;font-size:13px}
+  table{width:100%;min-width:1700px;border-collapse:separate;border-spacing:0;font-size:13px}
   th,td{padding:8px 10px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--linha)}
   thead th{position:sticky;background:var(--suave);font-weight:600;z-index:2}
   thead tr:first-child th{top:0}
@@ -233,12 +233,13 @@ async function atualiza(){
   desenha('c4', m, d.map(x=>x.margem_leite), css('--c-mleite'), 2, true, parcial, true);
   desenha('c2', m, d.map(x=>x.producao), css('--c-prod'), 1, false, parcial);
   desenha('c5', m, d.map(x=>x.producao_media_produtor), css('--c-media'), 1, false, parcial);
-  const grupos = ['Receita bruta','Venda de leite','Produção (L)','Margem da atividade','Margem do leite','Prod. média/produtor (L)'];
+  const grupos = ['Receita bruta','Venda de leite','Despesa direta','Produção (L)','Margem da atividade','Margem do leite','Prod. média/produtor (L)'];
   $('tab').innerHTML = '<thead><tr><th rowspan="2">Mês</th><th rowspan="2" class="sep">Com leite</th>' +
     grupos.map(g=>`<th class="g" colspan="2">${g}</th>`).join('') + '</tr><tr>' + grupos.map(()=>'<th class="sep">Valor</th><th>Var.</th>').join('') + '</tr></thead><tbody>' +
     d.map(x=>`<tr><td>${x.mes}</td><td class="sep">${nf.format(x.propriedades)}</td>`+
       `<td class="sep">${brl2(x.receita_bruta)}</td><td>${pct(x.var_receita_pct)}</td>`+
       `<td class="sep">${brl2(x.venda_leite)}</td><td>${pct(x.var_venda_leite_pct)}</td>`+
+      `<td class="sep">${brl2(x.despesa_direta)}</td><td>${pct(x.var_despesa_pct)}</td>`+
       `<td class="sep">${nf1.format(x.producao)}</td><td>${pct(x.var_producao_pct)}</td>`+
       `<td class="sep">${brl2(x.margem_bruta)}</td><td>${pct(x.var_margem_pct)}</td>`+
       `<td class="sep">${brl2(x.margem_leite)}</td><td>${pct(x.var_margem_leite_pct)}</td>`+
