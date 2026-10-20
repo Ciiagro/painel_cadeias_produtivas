@@ -60,15 +60,16 @@ const rotulosValores = {id:'rotulosValores', afterDatasetsDraw(chart){
   meta.data.forEach((pt, i) => {
     if (i % passo !== 0 && i !== n-1) return;
     const v = dados[i]; if (v == null) return;
-    ctx.fillText(nf.format(v), pt.x, pt.y - 7);
+    const c = chart.options.casas || 0;
+    ctx.fillText(new Intl.NumberFormat('pt-BR',{minimumFractionDigits:c,maximumFractionDigits:c}).format(v), pt.x, pt.y - 7);
   });
   ctx.restore();
 }};
-function desenha(id, rotulos, valores, cor){
+function desenha(id, rotulos, valores, cor, casas=0){
   if(charts[id]) charts[id].destroy();
   charts[id] = new Chart($(id), {type:'line', plugins:[rotulosValores],
     data:{labels:rotulos, datasets:[{data:valores, borderColor:cor, backgroundColor:cor+'22', fill:true, tension:.25}]},
-    options:{layout:{padding:{top:22,right:14}}, plugins:{legend:{display:false}}, scales:{y:{grace:'8%', ticks:{callback:v=>nf.format(v)}}}}});
+    options:{casas, layout:{padding:{top:22,right:14}}, plugins:{legend:{display:false}}, scales:{y:{grace:'8%', ticks:{callback:v=>nf.format(v)}}}}});
 }
 const pct = v => v==null ? '–' : `<span class="${v>=0?'pos':'neg'}">${v>0?'+':''}${v.toLocaleString('pt-BR')}%</span>`;
 function preenche(sel, itens, rotuloTodos){
@@ -107,12 +108,12 @@ async function atualiza(){
     <div class="kpi"><span>Margem bruta da atividade (${ult.mes})</span><b>${brl2(ult.margem_bruta)}</b>${pct(ult.var_margem_pct)} vs mês anterior</div>
     <div class="kpi"><span>Margem bruta do leite (${ult.mes})</span><b>${brl2(ult.margem_leite)}</b>${pct(ult.var_margem_leite_pct)} vs mês anterior</div>
     <div class="kpi"><span>Produção média por produtor (${ult.mes})</span><b>${nf1.format(ult.producao_media_produtor)} L</b>${pct(ult.var_prod_media_pct)} vs mês anterior</div>` : '<p>Sem dados para o filtro.</p>';
-  desenha('c1', m, d.map(x=>x.receita_bruta), '#2e7d32');
-  desenha('c6', m, d.map(x=>x.venda_leite), '#00695c');
-  desenha('c2', m, d.map(x=>x.producao), '#1565c0');
-  desenha('c3', m, d.map(x=>x.margem_bruta), '#ef6c00');
-  desenha('c4', m, d.map(x=>x.margem_leite), '#6a1b9a');
-  desenha('c5', m, d.map(x=>x.producao_media_produtor), '#00838f');
+  desenha('c1', m, d.map(x=>x.receita_bruta), '#2e7d32', 2);
+  desenha('c6', m, d.map(x=>x.venda_leite), '#00695c', 2);
+  desenha('c2', m, d.map(x=>x.producao), '#1565c0', 1);
+  desenha('c3', m, d.map(x=>x.margem_bruta), '#ef6c00', 2);
+  desenha('c4', m, d.map(x=>x.margem_leite), '#6a1b9a', 2);
+  desenha('c5', m, d.map(x=>x.producao_media_produtor), '#00838f', 1);
   $('tab').innerHTML = '<tr><th>Mês</th><th>Com leite lançado</th><th>Receita bruta</th><th>Var.</th><th>Venda de leite (R$)</th><th>Var.</th><th>Produção (L)</th><th>Var.</th><th>Margem bruta da atividade</th><th>Var.</th><th>Margem bruta do leite</th><th>Var.</th><th>Prod. média/produtor (L)</th><th>Var.</th></tr>' +
     d.map(x=>`<tr><td>${x.mes}</td><td>${nf.format(x.propriedades)}</td><td>${brl2(x.receita_bruta)}</td><td>${pct(x.var_receita_pct)}</td><td>${brl2(x.venda_leite)}</td><td>${pct(x.var_venda_leite_pct)}</td><td>${nf1.format(x.producao)}</td><td>${pct(x.var_producao_pct)}</td><td>${brl2(x.margem_bruta)}</td><td>${pct(x.var_margem_pct)}</td><td>${brl2(x.margem_leite)}</td><td>${pct(x.var_margem_leite_pct)}</td><td>${nf1.format(x.producao_media_produtor)}</td><td>${pct(x.var_prod_media_pct)}</td></tr>`).join('');
 }
