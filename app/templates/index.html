@@ -62,6 +62,25 @@
   .parc{background:#fff3d6;color:#7a5200;padding:1px 7px;border-radius:999px;font-weight:500}
   .pos{color:var(--pos);font-weight:600} .neg{color:var(--neg);font-weight:600}
 
+  [hidden]{display:none !important}
+  .abas{display:flex;gap:4px;border-bottom:1px solid var(--linha);margin:0 0 16px;overflow-x:auto}
+  .aba{border:0;background:transparent;padding:10px 16px;font:inherit;font-weight:600;color:var(--mut);cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-1px;white-space:nowrap;border-radius:6px 6px 0 0}
+  .aba:hover{color:var(--ink);background:#e4ebe6}
+  .aba.on{color:var(--verde-esc);border-bottom-color:var(--verde)}
+  .destaques{background:var(--surf);border:1px solid var(--linha);border-left:5px solid var(--verde);border-radius:12px;padding:16px 18px;margin-bottom:18px}
+  .destaques h2{margin:0 0 6px;font-size:17px;font-weight:700}
+  .d-resumo{margin:0 0 12px;font-size:14.5px;line-height:1.55}
+  .d-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:14px}
+  .d-bloco{background:var(--suave);border-radius:10px;padding:10px 12px}
+  .d-bloco h3{margin:0 0 6px;font-size:13.5px;font-weight:600}
+  .d-item{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:5px 0;border-bottom:1px solid var(--linha)}
+  .d-item:last-child{border-bottom:0} .d-item span:first-child{min-width:0;overflow-wrap:anywhere}
+  .d-item span:last-child{white-space:nowrap;font-weight:600}
+  .d-porque{margin:0 0 14px;background:var(--suave);border-radius:10px;padding:12px 14px}
+  .d-porque h3{margin:0 0 8px;font-size:14.5px}
+  .d-causa{display:grid;grid-template-columns:1fr auto;gap:2px 12px;padding:6px 0;border-bottom:1px solid var(--linha);font-size:13.5px}
+  .d-causa:last-child{border-bottom:0} .d-causa small{grid-column:1 / -1;color:var(--mut);font-size:12.5px}
+  .d-vazio{font-size:13px;color:var(--mut);margin:4px 0}
   .graficos{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-bottom:20px}
   .graf{background:var(--surf);border:1px solid var(--linha);border-radius:12px;padding:14px 16px 10px;min-width:0}
   .graf h2{margin:0;font-size:16px;font-weight:600;display:flex;align-items:center;gap:10px;color:var(--cor)}
@@ -113,7 +132,13 @@
   <div class="escopo"><h2 id="titulo">Todas as propriedades</h2><p id="periodo"></p></div>
   <div class="ficha" id="ficha" style="display:none"></div>
   <div class="kpis" id="kpis"></div>
-  <div class="graficos">
+  <nav class="abas" role="tablist" aria-label="Seções do painel">
+    <button type="button" role="tab" class="aba on" data-aba="graficos" aria-selected="true">Gráficos</button>
+    <button type="button" role="tab" class="aba" data-aba="destaques" aria-selected="false">Destaques do mês</button>
+    <button type="button" role="tab" class="aba" data-aba="tabela" aria-selected="false">Tabela mensal</button>
+  </nav>
+  <section class="destaques" id="destaques" hidden></section>
+  <div class="graficos" id="aba-graficos">
     <section class="graf" style="--cor:var(--c-receita)"><h2><span class="ico sm" data-ico="moedas"></span>Receita bruta (R$)</h2><p class="formula">Tudo que entrou na atividade, sem empréstimo nem investimento</p><div class="cv"><canvas id="c1"></canvas></div></section>
     <section class="graf" style="--cor:var(--c-venda)"><h2><span class="ico sm" data-ico="garrafa"></span>Venda de leite (R$)</h2><p class="formula">Leite in natura + bonificação por qualidade</p><div class="cv"><canvas id="c6"></canvas></div></section>
     <section class="graf" style="--cor:var(--c-prod)"><h2><span class="ico sm" data-ico="gota"></span>Produção de leite (litros)</h2><p class="formula">Vendido + consumido + bezerras</p><div class="cv"><canvas id="c2"></canvas></div></section>
@@ -121,7 +146,7 @@
     <section class="graf" style="--cor:var(--c-mleite)"><h2><span class="ico sm" data-ico="calc"></span>Margem bruta do leite (R$)</h2><p class="formula">Receita do leite &minus; despesa direta</p><div class="cv"><canvas id="c4"></canvas></div></section>
     <section class="graf" style="--cor:var(--c-media)"><h2><span class="ico sm" data-ico="pessoas"></span>Produção média por produtor (litros)</h2><p class="formula">Produção ÷ produtores com leite no mês</p><div class="cv"><canvas id="c5"></canvas></div></section>
   </div>
-  <section class="detalhe"><h2>Detalhe mensal</h2><div class="rolagem"><table id="tab"></table></div></section>
+  <section class="detalhe" id="aba-tabela" hidden><h2>Detalhe mensal</h2><div class="rolagem"><table id="tab"></table></div></section>
 </div>
 <script>
 const $ = id => document.getElementById(id);
@@ -201,6 +226,51 @@ async function carregaFiltros(){
   const pa = $('prop').value; $('prop').length = 1; f.propriedades.forEach(p=>$('prop').add(new Option(p.nome+' ('+p.id+')', p.id)));
   $('prop').value = f.propriedades.some(p=>String(p.id)===pa)?pa:'';
 }
+async function carregaDestaques(q, parcial){
+  const box = $('destaques');
+  let d = {};
+  try { d = await (await fetch('/api/destaques?' + q)).json(); } catch(e) { d = {}; }
+  if (!d || !d.mes || !d.total) { box.innerHTML = '<p class="d-vazio">Sem dados para o filtro escolhido.</p>'; return; }
+  const t = d.total, a = d.anterior;
+  const variacao = (x, y) => (!a || !y) ? 'sem mês anterior para comparar' : ((x/y-1)*100 >= 0 ? '+' : '') + ((x/y-1)*100).toLocaleString('pt-BR',{maximumFractionDigits:1}) + '% sobre ' + a;
+  let frase = `Em <b>${d.mes}</b>, a receita bruta foi <b>${brl2(t.rb)}</b> (${variacao(t.rb, t.rb_a)}), a produção foi de <b>${nf1.format(t.pr)} L</b> (${variacao(t.pr, t.pr_a)}) e a margem bruta da atividade foi <b>${brl2(t.mg)}</b>.`;
+  if (d.parcial_ignorado) frase += ' O mês atual ainda está em andamento, por isso a análise usa o último mês fechado.';
+  const item = (nome, valor) => `<div class="d-item"><span>${nome}</span><span>${valor}</span></div>`;
+  const sinal = v => (v > 0 ? '+' : v < 0 ? '−' : '');
+  const ranking = (titulo, lista, ehProd) => `<div class="d-bloco"><h3>${titulo}</h3>${lista.length ? lista.map(x =>
+      item(x.nome, `<span class="${x.delta>=0?'pos':'neg'}">${sinal(x.delta)}${ehProd ? nf.format(Math.abs(x.delta)) + ' L' : 'R$ ' + nf.format(Math.abs(x.delta))}${x.pct==null?'':' ('+(x.pct>0?'+':'')+x.pct.toLocaleString('pt-BR')+'%)'}</span>`)).join('') : '<p class="d-vazio">Nenhum.</p>'}</div>`;
+  const simples = (titulo, bloco, fmtVal) => `<div class="d-bloco"><h3>${titulo}${bloco.total ? ' (' + nf.format(bloco.total) + ')' : ''}</h3>${bloco.lista.length ? bloco.lista.map(x =>
+      item(x.nome + (x.tecnico ? '<br><small style="color:var(--mut)">' + x.tecnico + '</small>' : ''), fmtVal(x))).join('') : '<p class="d-vazio">Nenhuma.</p>'}</div>`;
+  // Por que mudou: causas da variação da receita
+  let porque = '';
+  if (d.explicacao && a) {
+    const e = d.explicacao, delta = t.rb - t.rb_a;
+    const causas = [
+      ['saidas',   'Propriedades que saíram ou pararam de lançar leite', x => `${x.qtd} propriedade(s); deixaram de contribuir com ${nf.format(Math.abs(x.litros))} L`],
+      ['entradas', 'Propriedades novas ou que voltaram a lançar leite', x => `${x.qtd} propriedade(s); entraram com ${nf.format(x.litros)} L`],
+      ['volume',   'Mudança na produção das que continuaram', x => `${x.qtd} propriedade(s); ${x.litros>=0?'+':'−'}${nf.format(Math.abs(x.litros))} L`],
+      ['preco',    'Mudança na receita por litro (preço do leite e outras receitas)', x => `${x.qtd} propriedade(s)`],
+      ['outros',   'Outras receitas (sem leite lançado)', x => '']
+    ].map(([k, nome, det]) => ({nome, v: e[k].receita, det: det(e[k]), qtd: e[k].qtd})).filter(c => Math.abs(c.v) >= 1).sort((x, y) => Math.abs(y.v) - Math.abs(x.v));
+    const verbo = delta >= 0 ? 'subiu' : 'caiu';
+    porque = `<div class="d-porque"><h3>Por que a receita ${verbo} ${brl2(Math.abs(delta))} em relação a ${a}?</h3>` +
+      (causas.length ? causas.map(c => `<div class="d-causa"><span>${c.nome}</span><span class="${c.v>=0?'pos':'neg'}">${c.v>=0?'+':'−'}${brl2(Math.abs(c.v))}</span>${c.det ? `<small>${c.det}</small>` : ''}</div>`).join('') : '<p class="d-vazio">Sem variação relevante.</p>') + '</div>';
+  }
+  let blocos = '';
+  if (d.receita) {
+    const ent = d.entidade || '';
+    blocos += ranking(`Maiores quedas de receita por ${ent}`, d.receita.quedas, false);
+    blocos += ranking(`Maiores altas de receita por ${ent}`, d.receita.altas, false);
+    blocos += ranking(`Maiores quedas de produção por ${ent}`, d.producao.quedas, true);
+    blocos += simples('Propriedades com margem negativa', d.margem_negativa, x => `<span class="neg">${brl2(x.valor)}</span>`);
+    blocos += simples('Produção caiu mais de 20%', d.queda_forte_producao, x => `<span class="neg">${x.pct.toLocaleString('pt-BR')}%</span>`);
+    const dtbr = v => v ? v.split('-').reverse().join('/') : '';
+    blocos += `<div class="d-bloco"><h3>Saíram ou pararam de lançar leite${d.pararam.total ? ' (' + nf.format(d.pararam.total) + ')' : ''}</h3>${d.pararam.lista.length ? d.pararam.lista.map(x =>
+      item(x.nome + '<br><small style="color:var(--mut)">' + (x.tecnico || '') + ' · ' + (x.ativa ? 'ainda ativa no projeto' : 'inativa' + (x.fim ? ', saiu em ' + dtbr(x.fim) : '') + (x.motivo ? ' (' + x.motivo + ')' : '')) + '</small>',
+           `<span class="neg">−${brl2(x.valor)}</span>`)).join('') : '<p class="d-vazio">Nenhuma.</p>'}</div>`;
+  }
+  box.innerHTML = `<h2>Destaques de ${d.mes}</h2><p class="d-resumo">${frase}</p>` + porque + (blocos ? `<div class="d-grid">${blocos}</div>` : '');
+}
 async function atualiza(){
   const q = new URLSearchParams({projeto:$('proj').value, supervisor:$('sup').value, tecnico:$('tec').value, propriedade:$('prop').value, situacao:$('sit').value, de:$('de').value, ate:$('ate').value});
   // título da tela: o recorte escolhido nos filtros
@@ -236,6 +306,7 @@ async function atualiza(){
     cartao('Margem bruta da atividade', brl2(ult.margem_bruta), ult.var_margem_pct, d.map(x=>x.margem_bruta), 'var(--c-mat)', 'barras'),
     cartao('Margem bruta do leite', brl2(ult.margem_leite), ult.var_margem_leite_pct, d.map(x=>x.margem_leite), 'var(--c-mleite)', 'calc')
   ].join('') : '<p>Sem dados para o filtro.</p>';
+  carregaDestaques(q, parcial);
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   desenha('c1', m, d.map(x=>x.receita_bruta), css('--c-receita'), 2, true, parcial);
   desenha('c6', m, d.map(x=>x.venda_leite), css('--c-venda'), 2, true, parcial);
@@ -261,6 +332,13 @@ $('tec').onchange = async()=>{ $('prop').value=''; await carregaFiltros(); atual
 $('sit').onchange = async()=>{ $('prop').value=''; await carregaFiltros(); atualiza(); };
 ['prop','de','ate'].forEach(i=>$(i).onchange=atualiza);
 $('btnAtualiza').onclick = async()=>{ await carregaFiltros(); atualiza(); };
+function mostraAba(nome){
+  const alvos = {graficos:'aba-graficos', destaques:'destaques', tabela:'aba-tabela'};
+  Object.entries(alvos).forEach(([n, id]) => { $(id).hidden = (n !== nome); });
+  document.querySelectorAll('.aba').forEach(b => { const on = b.dataset.aba === nome; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); });
+  if (nome === 'graficos') Object.values(charts).forEach(c => c.resize());
+}
+document.querySelectorAll('.aba').forEach(b => b.onclick = () => mostraAba(b.dataset.aba));
 carregaFiltros().then(atualiza);
 </script>
 </body>

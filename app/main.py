@@ -152,6 +152,112 @@ def serie(supervisor: str | None = None, tecnico: str | None = None, propriedade
     return rows
 
 
+@app.get("/api/destaques")
+def destaques(supervisor: str | None = None, tecnico: str | None = None, propriedade: int | None = None,
+              projeto: str | None = None, situacao: str | None = None,
+              ate: str | None = Query(None, description="YYYY-MM")):
+    """Destaques automáticos do mês de referência (por regras, sem IA): comparam o mês com o anterior,
+    dentro dos filtros escolhidos. Se o último mês ainda está em andamento, usa o mês anterior (fechado)."""
+    from datetime import date
+    where, p = _where(supervisor, tecnico, projeto, propriedade, situacao)
+    wsql = " AND ".join(where)
+    sub = {"mi": MES_INICIO}
+    sql_m = f"SELECT DISTINCT mes FROM {TABLE} WHERE mes >= :mi "
+    if ate:
+        sql_m += "AND mes <= :ate "; sub["ate"] = ate
+    sql_m += "ORDER BY mes DESC LIMIT 4"
+    with engine.connect() as con:
+        meses = [r[0] for r in con.execute(text(sql_m), sub)]
+        if not meses:
+            return {}
+        parcial = meses[0] == date.today().strftime("%Y-%m") and len(meses) > 1
+        i = 1 if parcial else 0
+        m = meses[i]
+        a = meses[i + 1] if len(meses) > i + 1 else None
+        pm = {**p, "m": m, "a": a or "0000-00"}
+        t = con.execute(text(f"""
+            SELECT COALESCE(SUM(receita_bruta) FILTER (WHERE mes = :m), 0)  AS rb,
+                   COALESCE(SUM(receita_bruta) FILTER (WHERE mes = :a), 0)  AS rb_a,
+                   COALESCE(SUM(producao_leite_l) FILTER (WHERE mes = :m), 0) AS pr,
+                   COALESCE(SUM(producao_leite_l) FILTER (WHERE mes = :a), 0) AS pr_a,
+                   COALESCE(SUM(COALESCE(receita_bruta,0) - COALESCE(despesa_direta,0)) FILTER (WHERE mes = :m), 0) AS mg,
+                   COALESCE(SUM(COALESCE(receita_bruta,0) - COALESCE(despesa_direta,0)) FILTER (WHERE mes = :a), 0) AS mg_a
+            FROM {TABLE} WHERE {wsql} AND mes IN (:m, :a)"""), pm).mappings().first()
+        out = {"mes": m, "anterior": a, "parcial_ignorado": parcial,
+               "total": {k: float(v) for k, v in dict(t).items()}, "entidade": None}
+        if propriedade:   # uma propriedade só: não há ranking a mostrar
+            return out
+        if tecnico:
+            ent_sql = "COALESCE(propriedade, 'Propriedade ' || id_propriedade) || COALESCE(' - ' || produtor, '')"
+            out["entidade"] = "propriedade"
+        else:
+            ent_sql = "tecnico"
+            out["entidade"] = "técnico"
+        rows = [dict(r._mapping) for r in con.execute(text(f"""
+            SELECT {ent_sql} AS nome,
+                   COALESCE(SUM(receita_bruta) FILTER (WHERE mes = :m), 0) AS rb,
+                   COALESCE(SUM(receita_bruta) FILTER (WHERE mes = :a), 0) AS rb_a,
+                   COALESCE(SUM(producao_leite_l) FILTER (WHERE mes = :m), 0) AS pr,
+                   COALESCE(SUM(producao_leite_l) FILTER (WHERE mes = :a), 0) AS pr_a
+            FROM {TABLE} WHERE {wsql} AND mes IN (:m, :a) GROUP BY 1"""), pm) if r[0] is not None]
+
+        def ranking(campo, ant, n=3):
+            itens = [{"nome": r["nome"], "atual": float(r[campo]), "anterior": float(r[ant]),
+                      "delta": float(r[campo]) - float(r[ant])} for r in rows]
+            for it in itens:
+                it["pct"] = round(it["delta"] / it["anterior"] * 100, 1) if it["anterior"] else None
+            quedas = sorted([x for x in itens if x["delta"] < 0], key=lambda x: x["delta"])[:n]
+            altas = sorted([x for x in itens if x["delta"] > 0], key=lambda x: -x["delta"])[:n]
+            return {"quedas": quedas, "altas": altas}
+        out["receita"] = ranking("rb", "rb_a")
+        out["producao"] = ranking("pr", "pr_a")
+
+        props = [dict(r._mapping) for r in con.execute(text(f"""
+            SELECT id_propriedade, MAX(propriedade) AS nome, MAX(produtor) AS produtor, MAX(tecnico) AS tecnico,
+                   COALESCE(SUM(COALESCE(receita_bruta,0) - COALESCE(despesa_direta,0)) FILTER (WHERE mes = :m), 0) AS mg,
+                   COALESCE(SUM(receita_bruta) FILTER (WHERE mes = :m), 0) AS rb,
+                   COALESCE(SUM(producao_leite_l) FILTER (WHERE mes = :m), 0) AS pr,
+                   COALESCE(SUM(producao_leite_l) FILTER (WHERE mes = :a), 0) AS pr_a,
+                   COALESCE(SUM(receita_bruta) FILTER (WHERE mes = :a), 0) AS rb_a,
+                   MAX(CASE WHEN ativa THEN 1 ELSE 0 END) AS ativa_n,
+                   MAX(fim_projeto) AS fim, MAX(motivo_desativacao) AS motivo
+            FROM {TABLE} WHERE {wsql} AND mes IN (:m, :a) GROUP BY id_propriedade"""), pm)]
+
+        def rot(x):
+            return (x["nome"] or f"Propriedade {x['id_propriedade']}") + (f" - {x['produtor']}" if x["produtor"] else "")
+        neg = sorted([x for x in props if float(x["mg"]) < 0 and float(x["pr"]) > 0], key=lambda x: float(x["mg"]))
+        out["margem_negativa"] = {"total": len(neg), "lista": [
+            {"nome": rot(x), "tecnico": x["tecnico"], "valor": float(x["mg"])} for x in neg[:5]]}
+        par = sorted([x for x in props if float(x["pr_a"]) > 0 and float(x["pr"]) == 0], key=lambda x: -float(x["rb_a"]))
+        out["pararam"] = {"total": len(par), "lista": [
+            {"nome": rot(x), "tecnico": x["tecnico"], "valor": float(x["rb_a"]), "litros": float(x["pr_a"]),
+             "ativa": bool(x["ativa_n"]), "fim": (str(x["fim"])[:10] if x["fim"] else None), "motivo": x["motivo"]}
+            for x in par[:6]]}
+
+        # Por que a receita e a produção mudaram: separa o efeito de quem saiu, de quem entrou,
+        # da variação de litros e da variação de receita por litro nas propriedades que continuam.
+        b = {"saidas": [0.0, 0.0, 0], "entradas": [0.0, 0.0, 0], "volume": [0.0, 0.0, 0], "preco": [0.0, 0.0, 0], "outros": [0.0, 0.0, 0]}
+        for x in props:
+            rb, rb_a, pr, pr_a = float(x["rb"]), float(x["rb_a"]), float(x["pr"]), float(x["pr_a"])
+            if pr_a > 0 and pr > 0:
+                p_a, p_n = rb_a / pr_a, rb / pr
+                b["volume"][0] += (pr - pr_a) * p_a; b["volume"][1] += pr - pr_a; b["volume"][2] += 1
+                b["preco"][0] += (p_n - p_a) * pr; b["preco"][2] += 1
+            elif pr_a > 0 and pr == 0:
+                b["saidas"][0] += rb - rb_a; b["saidas"][1] += -pr_a; b["saidas"][2] += 1
+            elif pr_a == 0 and pr > 0:
+                b["entradas"][0] += rb - rb_a; b["entradas"][1] += pr; b["entradas"][2] += 1
+            else:
+                b["outros"][0] += rb - rb_a
+        out["explicacao"] = {k: {"receita": round(v[0], 2), "litros": round(v[1], 1), "qtd": v[2]} for k, v in b.items()}
+        qd = sorted([x for x in props if float(x["pr_a"]) >= 500 and 0 < float(x["pr"]) < float(x["pr_a"]) * 0.8],
+                    key=lambda x: float(x["pr"]) - float(x["pr_a"]))
+        out["queda_forte_producao"] = {"total": len(qd), "lista": [
+            {"nome": rot(x), "tecnico": x["tecnico"], "atual": float(x["pr"]), "anterior": float(x["pr_a"]),
+             "pct": round((float(x["pr"]) / float(x["pr_a"]) - 1) * 100, 1)} for x in qd[:5]]}
+    return out
+
+
 @app.get("/health")
 def health():
     return {"ok": True}
