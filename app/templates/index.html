@@ -38,7 +38,9 @@
   <div class="kpis" id="kpis"></div>
   <div class="graf"><h2>Receita bruta (R$)</h2><canvas id="c1"></canvas></div>
   <div class="graf"><h2>Produção de leite (litros)</h2><canvas id="c2"></canvas></div>
-  <div class="graf"><h2>Margem bruta (R$)</h2><canvas id="c3"></canvas></div>
+  <div class="graf"><h2>Margem bruta da atividade (R$) = receita bruta − despesa direta</h2><canvas id="c3"></canvas></div>
+  <div class="graf"><h2>Margem bruta do leite (R$) = receita do leite − despesa direta</h2><canvas id="c4"></canvas></div>
+  <div class="graf"><h2>Produção média por produtor (litros)</h2><canvas id="c5"></canvas></div>
   <div class="graf"><h2>Detalhe mensal</h2><div style="overflow:auto"><table id="tab"></table></div></div>
 </main>
 <script>
@@ -98,12 +100,16 @@ async function atualiza(){
     <div class="kpi"><span>Propriedades ativas</span><b>${nf.format(ult.propriedades_total)}</b><small>${nf.format(ult.propriedades)} com leite lançado em ${ult.mes}</small></div>
     <div class="kpi"><span>Receita bruta (${ult.mes})</span><b>${brl(ult.receita_bruta)}</b>${pct(ult.var_receita_pct)} vs mês anterior</div>
     <div class="kpi"><span>Produção (${ult.mes})</span><b>${nf.format(ult.producao)} L</b>${pct(ult.var_producao_pct)} vs mês anterior</div>
-    <div class="kpi"><span>Margem bruta (${ult.mes})</span><b>${brl(ult.margem_bruta)}</b>${pct(ult.var_margem_pct)} vs mês anterior</div>` : '<p>Sem dados para o filtro.</p>';
+    <div class="kpi"><span>Margem bruta da atividade (${ult.mes})</span><b>${brl(ult.margem_bruta)}</b>${pct(ult.var_margem_pct)} vs mês anterior</div>
+    <div class="kpi"><span>Margem bruta do leite (${ult.mes})</span><b>${brl(ult.margem_leite)}</b>${pct(ult.var_margem_leite_pct)} vs mês anterior</div>
+    <div class="kpi"><span>Produção média por produtor (${ult.mes})</span><b>${nf.format(ult.producao_media_produtor)} L</b>${pct(ult.var_prod_media_pct)} vs mês anterior</div>` : '<p>Sem dados para o filtro.</p>';
   desenha('c1', m, d.map(x=>x.receita_bruta), '#2e7d32');
   desenha('c2', m, d.map(x=>x.producao), '#1565c0');
   desenha('c3', m, d.map(x=>x.margem_bruta), '#ef6c00');
-  $('tab').innerHTML = '<tr><th>Mês</th><th>Com leite lançado</th><th>Receita bruta</th><th>Var.</th><th>Produção (L)</th><th>Var.</th><th>Margem bruta</th><th>Var.</th></tr>' +
-    d.map(x=>`<tr><td>${x.mes}</td><td>${nf.format(x.propriedades)}</td><td>${brl(x.receita_bruta)}</td><td>${pct(x.var_receita_pct)}</td><td>${nf.format(x.producao)}</td><td>${pct(x.var_producao_pct)}</td><td>${brl(x.margem_bruta)}</td><td>${pct(x.var_margem_pct)}</td></tr>`).join('');
+  desenha('c4', m, d.map(x=>x.margem_leite), '#6a1b9a');
+  desenha('c5', m, d.map(x=>x.producao_media_produtor), '#00838f');
+  $('tab').innerHTML = '<tr><th>Mês</th><th>Com leite lançado</th><th>Receita bruta</th><th>Var.</th><th>Produção (L)</th><th>Var.</th><th>Margem bruta da atividade</th><th>Var.</th><th>Margem bruta do leite</th><th>Var.</th><th>Prod. média/produtor (L)</th><th>Var.</th></tr>' +
+    d.map(x=>`<tr><td>${x.mes}</td><td>${nf.format(x.propriedades)}</td><td>${brl(x.receita_bruta)}</td><td>${pct(x.var_receita_pct)}</td><td>${nf.format(x.producao)}</td><td>${pct(x.var_producao_pct)}</td><td>${brl(x.margem_bruta)}</td><td>${pct(x.var_margem_pct)}</td><td>${brl(x.margem_leite)}</td><td>${pct(x.var_margem_leite_pct)}</td><td>${nf.format(x.producao_media_produtor)}</td><td>${pct(x.var_prod_media_pct)}</td></tr>`).join('');
 }
 $('proj').onchange = async()=>{ $('prop').value=''; await carregaFiltros(); atualiza(); };
 $('sup').onchange = async()=>{ $('tec').value=''; $('prop').value=''; await carregaFiltros(); atualiza(); };

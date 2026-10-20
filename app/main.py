@@ -69,14 +69,14 @@ def filtros(supervisor: str | None = None, tecnico: str | None = None, projeto: 
             w, p = _where(**outros)
             w.append(f"{coluna} IS NOT NULL")
             return [r[0] for r in con.execute(text(
-                f"SELECT DISTINCT {coluna} FROM {PROPS} WHERE {' AND '.join(w)} ORDER BY 1"), p)]
+                f"SELECT DISTINCT {coluna} FROM {TABLE} WHERE {' AND '.join(w)} ORDER BY 1"), p)]
         projetos = lista("projeto", supervisor=supervisor, tecnico=tecnico)
         sups = lista("supervisor", projeto=projeto)
         tecs = lista("tecnico", supervisor=supervisor, projeto=projeto)
         w2, p2 = _where(supervisor, tecnico, projeto)
         props = [{"id": r[0], "nome": r[1]} for r in con.execute(text(
             f"SELECT DISTINCT id_propriedade, COALESCE(propriedade, 'Propriedade ' || id_propriedade) "
-            f"FROM {PROPS} WHERE {' AND '.join(w2)} ORDER BY 2"), p2)]
+            f"FROM {TABLE} WHERE {' AND '.join(w2)} ORDER BY 2"), p2)]
         meses = [r[0] for r in con.execute(text(f"SELECT DISTINCT mes FROM {TABLE} WHERE mes >= :mi ORDER BY 1"), {"mi": MES_INICIO})]
     return {"projetos": projetos, "supervisores": sups, "tecnicos": tecs, "propriedades": props, "meses": meses}
 
@@ -116,10 +116,13 @@ def serie(supervisor: str | None = None, tecnico: str | None = None, propriedade
                COUNT(DISTINCT id_propriedade)           AS propriedades,
                COALESCE(SUM(producao_leite_l), 0)       AS producao,
                COALESCE(SUM(receita_bruta), 0)          AS receita_bruta,
-               COALESCE(SUM(COALESCE(receita_bruta,0) - COALESCE(despesa_direta,0)), 0) AS margem_bruta
+               COALESCE(SUM(COALESCE(receita_bruta,0) - COALESCE(despesa_direta,0)), 0) AS margem_bruta,
+               COALESCE(SUM(COALESCE(venda_leite_rs,0) - COALESCE(despesa_direta,0)), 0) AS margem_leite,
+               COUNT(DISTINCT produtor)                 AS produtores
         FROM {TABLE} WHERE {' AND '.join(where)}
         GROUP BY mes ORDER BY mes"""
     wp, pp = _where(supervisor, tecnico, projeto, propriedade)
+    wp.append("ativa")  # o card 'Propriedades ativas' conta só as ativas hoje
     with engine.connect() as con:
         rows = [dict(r._mapping) for r in con.execute(text(sql), p)]
         total_props = con.execute(text(f"SELECT COUNT(DISTINCT id_propriedade) FROM {PROPS} WHERE {' AND '.join(wp)}"), pp).scalar()
@@ -127,11 +130,14 @@ def serie(supervisor: str | None = None, tecnico: str | None = None, propriedade
         r["propriedades_total"] = int(total_props or 0)
     prev = None
     for r in rows:
-        for k in ("producao", "receita_bruta", "margem_bruta"):
+        for k in ("producao", "receita_bruta", "margem_bruta", "margem_leite"):
             r[k] = float(r[k])
+        r["producao_media_produtor"] = round(r["producao"] / r["produtores"], 1) if r["produtores"] else 0
         r["var_receita_pct"] = None if not prev or not prev["receita_bruta"] else round((r["receita_bruta"] / prev["receita_bruta"] - 1) * 100, 1)
         r["var_producao_pct"] = None if not prev or not prev["producao"] else round((r["producao"] / prev["producao"] - 1) * 100, 1)
         r["var_margem_pct"] = None if not prev or not prev["margem_bruta"] else round((r["margem_bruta"] / abs(prev["margem_bruta"]) - 1) * 100, 1)
+        r["var_margem_leite_pct"] = None if not prev or not prev["margem_leite"] else round((r["margem_leite"] / abs(prev["margem_leite"]) - 1) * 100, 1)
+        r["var_prod_media_pct"] = None if not prev or not prev["producao_media_produtor"] else round((r["producao_media_produtor"] / prev["producao_media_produtor"] - 1) * 100, 1)
         prev = r
     return rows
 
