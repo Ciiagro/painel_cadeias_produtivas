@@ -157,7 +157,8 @@ def serie(supervisor: str | None = None, tecnico: str | None = None, propriedade
 @app.get("/api/destaques")
 def destaques(supervisor: str | None = None, tecnico: str | None = None, propriedade: int | None = None,
               projeto: str | None = None, situacao: str | None = None, municipio: str | None = None,
-              ate: str | None = Query(None, description="YYYY-MM")):
+              ate: str | None = Query(None, description="YYYY-MM"),
+              de: str | None = Query(None, description="YYYY-MM")):
     """Destaques automáticos do mês de referência (por regras, sem IA): comparam o mês com o anterior,
     dentro dos filtros escolhidos. Se o último mês ainda está em andamento, usa o mês anterior (fechado)."""
     from datetime import date
@@ -176,6 +177,11 @@ def destaques(supervisor: str | None = None, tecnico: str | None = None, proprie
         i = 1 if parcial else 0
         m = meses[i]
         a = meses[i + 1] if len(meses) > i + 1 else None
+        if de and de < m:  # período escolhido: compara o mês final com o primeiro mês com dados do período
+            a0 = con.execute(text(f"SELECT MIN(mes) FROM {TABLE} WHERE mes >= :mi AND mes >= :de AND mes < :m"),
+                             {"mi": MES_INICIO, "de": de, "m": m}).scalar()
+            if a0:
+                a = a0
         pm = {**p, "m": m, "a": a or "0000-00"}
         t = con.execute(text(f"""
             SELECT COALESCE(SUM(receita_bruta) FILTER (WHERE mes = :m), 0)  AS rb,

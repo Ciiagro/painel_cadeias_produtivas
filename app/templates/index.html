@@ -279,7 +279,7 @@ async function carregaDestaques(q, parcial){
       item(x.nome + '<br><small style="color:var(--mut)">' + (x.tecnico || '') + ' · ' + (x.ativa ? 'ainda ativa no projeto' : 'inativa' + (x.fim ? ', saiu em ' + dtbr(x.fim) : '') + (x.motivo ? ' (' + x.motivo + ')' : '')) + '</small>',
            `<span class="neg">−${brl2(x.valor)}</span>`)).join('') : '<p class="d-vazio">Nenhuma.</p>'}</div>`;
   }
-  box.innerHTML = `<h2>Destaques de ${d.mes}</h2><p class="d-resumo">${frase}</p>` + porque + (blocos ? `<div class="d-grid">${blocos}</div>` : '');
+  box.innerHTML = `<h2>Destaques: ${d.mes}${a ? ' comparado a ' + a : ''}</h2><p class="d-resumo">${frase}</p>` + porque + (blocos ? `<div class="d-grid">${blocos}</div>` : '');
 }
 async function atualiza(){
   const q = new URLSearchParams({projeto:$('proj').value, supervisor:$('sup').value, tecnico:$('tec').value, propriedade:$('prop').value, municipio:$('mun').value, situacao:$('sit').value, de:$('de').value, ate:$('ate').value});
