@@ -26,8 +26,10 @@
   .atividade{margin-left:auto;display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px;background:rgba(255,255,255,.14);padding:8px 14px;border-radius:999px}
 
   .corpo{padding:18px 30px 48px;max-width:2200px;margin:0 auto}
-  .filtros{background:var(--surf);border:1px solid var(--linha);border-radius:12px;padding:12px 16px;display:grid;grid-template-columns:repeat(5,minmax(0,1fr)) minmax(250px,1.1fr) auto;gap:14px;align-items:end;margin-bottom:16px;position:sticky;top:8px;z-index:20;box-shadow:0 4px 14px rgba(20,40,28,.08)}
+  .filtros{background:var(--surf);border:1px solid var(--linha);border-radius:12px;padding:12px 16px;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:14px;align-items:end;margin-bottom:16px;position:sticky;top:8px;z-index:20;box-shadow:0 4px 14px rgba(20,40,28,.08)}
   .filtros label{display:flex;flex-direction:column;gap:4px;font-size:12.5px;font-weight:500;color:var(--mut);min-width:0}
+  .periodo{grid-column:span 2}
+  .filtros .btn{grid-column:6}
   .periodo{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:end}
   .periodo i{font-style:normal;color:var(--mut);padding-bottom:9px}
   select{width:100%;padding:9px 10px;border:1px solid var(--linha);border-radius:8px;font:inherit;font-size:14px;color:var(--ink);background:var(--suave);min-width:0}
@@ -101,7 +103,7 @@
   thead th:first-child{background:var(--suave);z-index:3}
   tbody tr:hover td{background:#f0f6f2}
 
-  @media(max-width:1250px){.filtros{grid-template-columns:repeat(2,minmax(0,1fr))}.periodo{grid-column:1 / -1}.btn{justify-content:center}}
+  @media(max-width:1250px){.filtros{grid-template-columns:repeat(2,minmax(0,1fr))}.periodo{grid-column:1 / -1}.filtros .btn{grid-column:1 / -1;justify-content:center}}
   @media(max-width:1100px){.graficos{grid-template-columns:1fr}}
   @media(max-width:700px){
     .faixa{padding:14px 16px;flex-wrap:wrap} .faixa h1{font-size:20px} .atividade{margin-left:0}
@@ -122,6 +124,7 @@
     <label>Projeto<select id="proj"><option value="">Todos</option></select></label>
     <label>Supervisor<select id="sup"><option value="">Todos</option></select></label>
     <label>Técnico<select id="tec"><option value="">Todos</option></select></label>
+    <label>Município<select id="mun"><option value="">Todos</option></select></label>
     <label>Propriedade<select id="prop"><option value="">Todas</option></select></label>
     <label>Situação<select id="sit"><option value="">Ativas e inativas</option><option value="ativa">Só ativas</option><option value="inativa">Só inativas</option></select></label>
     <div class="periodo">
@@ -220,9 +223,9 @@ function preenche(sel, itens){
   sel.value = itens.includes(atual) ? atual : '';
 }
 async function carregaFiltros(){
-  const f = await (await fetch('/api/filtros?'+new URLSearchParams({projeto:$('proj').value, supervisor:$('sup').value, tecnico:$('tec').value, situacao:$('sit').value}))).json();
+  const f = await (await fetch('/api/filtros?'+new URLSearchParams({projeto:$('proj').value, supervisor:$('sup').value, tecnico:$('tec').value, municipio:$('mun').value, situacao:$('sit').value}))).json();
   if(!$('de').dataset.ok){ f.meses.forEach(m=>{$('de').add(new Option(m,m)); $('ate').add(new Option(m,m));}); $('de').value=f.meses[0]; $('ate').value=f.meses[f.meses.length-1]; $('de').dataset.ok=1; }
-  preenche($('proj'), f.projetos); preenche($('sup'), f.supervisores); preenche($('tec'), f.tecnicos);
+  preenche($('proj'), f.projetos); preenche($('sup'), f.supervisores); preenche($('tec'), f.tecnicos); preenche($('mun'), f.municipios);
   const pa = $('prop').value; $('prop').length = 1; f.propriedades.forEach(p=>$('prop').add(new Option(p.nome+' ('+p.id+')', p.id)));
   $('prop').value = f.propriedades.some(p=>String(p.id)===pa)?pa:'';
 }
@@ -272,9 +275,9 @@ async function carregaDestaques(q, parcial){
   box.innerHTML = `<h2>Destaques de ${d.mes}</h2><p class="d-resumo">${frase}</p>` + porque + (blocos ? `<div class="d-grid">${blocos}</div>` : '');
 }
 async function atualiza(){
-  const q = new URLSearchParams({projeto:$('proj').value, supervisor:$('sup').value, tecnico:$('tec').value, propriedade:$('prop').value, situacao:$('sit').value, de:$('de').value, ate:$('ate').value});
+  const q = new URLSearchParams({projeto:$('proj').value, supervisor:$('sup').value, tecnico:$('tec').value, propriedade:$('prop').value, municipio:$('mun').value, situacao:$('sit').value, de:$('de').value, ate:$('ate').value});
   // título da tela: o recorte escolhido nos filtros
-  const escopo = $('prop').value ? $('prop').selectedOptions[0].text : ($('tec').value || $('sup').value || $('proj').value || 'Todas as propriedades');
+  const escopo = $('prop').value ? $('prop').selectedOptions[0].text : ($('tec').value || $('mun').value || $('sup').value || $('proj').value || 'Todas as propriedades');
   $('titulo').textContent = escopo;
   $('periodo').textContent = 'Período: ' + $('de').value + ' a ' + $('ate').value;
   if($('prop').value){
@@ -326,10 +329,7 @@ async function atualiza(){
       `<td class="sep">${brl2(x.margem_leite)}</td><td>${pct(x.var_margem_leite_pct)}</td>`+
       `<td class="sep">${nf1.format(x.producao_media_produtor)}</td><td>${pct(x.var_prod_media_pct)}</td></tr>`).join('') + '</tbody>';
 }
-$('proj').onchange = async()=>{ $('prop').value=''; await carregaFiltros(); atualiza(); };
-$('sup').onchange = async()=>{ $('tec').value=''; $('prop').value=''; await carregaFiltros(); atualiza(); };
-$('tec').onchange = async()=>{ $('prop').value=''; await carregaFiltros(); atualiza(); };
-$('sit').onchange = async()=>{ $('prop').value=''; await carregaFiltros(); atualiza(); };
+['proj','sup','tec','mun','sit'].forEach(id => $(id).onchange = async () => { await carregaFiltros(); atualiza(); });
 ['prop','de','ate'].forEach(i=>$(i).onchange=atualiza);
 $('btnAtualiza').onclick = async()=>{ await carregaFiltros(); atualiza(); };
 function mostraAba(nome){

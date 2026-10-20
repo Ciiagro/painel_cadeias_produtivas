@@ -47,7 +47,7 @@ def index(request: Request):
     return templates.TemplateResponse(request, "index.html")
 
 
-def _where(supervisor=None, tecnico=None, projeto=None, propriedade=None, situacao=None):
+def _where(supervisor=None, tecnico=None, projeto=None, propriedade=None, situacao=None, municipio=None):
     """Monta WHERE + parâmetros para os filtros (mesmas colunas nas duas views)."""
     w, p = ["1=1"], {}
     if supervisor:
@@ -58,6 +58,8 @@ def _where(supervisor=None, tecnico=None, projeto=None, propriedade=None, situac
         w.append("projeto = :pj"); p["pj"] = projeto
     if propriedade:
         w.append("id_propriedade = :pr"); p["pr"] = propriedade
+    if municipio:
+        w.append("municipio = :mu"); p["mu"] = municipio
     if situacao == "ativa":
         w.append("ativa")
     elif situacao == "inativa":
@@ -67,23 +69,23 @@ def _where(supervisor=None, tecnico=None, projeto=None, propriedade=None, situac
 
 @app.get("/api/filtros")
 def filtros(supervisor: str | None = None, tecnico: str | None = None, projeto: str | None = None,
-            situacao: str | None = None):
-    """Listas dos filtros. Cada lista respeita os OUTROS filtros já escolhidos."""
+            municipio: str | None = None, situacao: str | None = None):
+    """Listas dos filtros. Cada lista respeita TODOS os outros filtros já escolhidos (filtros em cascata)."""
+    escolhidos = {"supervisor": supervisor, "tecnico": tecnico, "projeto": projeto, "municipio": municipio}
     with engine.connect() as con:
-        def lista(coluna, **outros):
-            w, p = _where(**outros)
+        def lista(coluna):
+            outros = {k: v for k, v in escolhidos.items() if k != coluna}
+            w, p = _where(situacao=situacao, **outros)
             w.append(f"{coluna} IS NOT NULL")
             return [r[0] for r in con.execute(text(
                 f"SELECT DISTINCT {coluna} FROM {TABLE} WHERE {' AND '.join(w)} ORDER BY 1"), p)]
-        projetos = lista("projeto", supervisor=supervisor, tecnico=tecnico, situacao=situacao)
-        sups = lista("supervisor", projeto=projeto, situacao=situacao)
-        tecs = lista("tecnico", supervisor=supervisor, projeto=projeto, situacao=situacao)
-        w2, p2 = _where(supervisor, tecnico, projeto, None, situacao)
+        projetos, sups, tecs, muns = lista("projeto"), lista("supervisor"), lista("tecnico"), lista("municipio")
+        w2, p2 = _where(supervisor, tecnico, projeto, None, situacao, municipio)
         props = [{"id": r[0], "nome": r[1]} for r in con.execute(text(
             f"SELECT DISTINCT id_propriedade, COALESCE(propriedade, 'Propriedade ' || id_propriedade) "
             f"FROM {TABLE} WHERE {' AND '.join(w2)} ORDER BY 2"), p2)]
         meses = [r[0] for r in con.execute(text(f"SELECT DISTINCT mes FROM {TABLE} WHERE mes >= :mi ORDER BY 1"), {"mi": MES_INICIO})]
-    return {"projetos": projetos, "supervisores": sups, "tecnicos": tecs, "propriedades": props, "meses": meses}
+    return {"projetos": projetos, "supervisores": sups, "tecnicos": tecs, "municipios": muns, "propriedades": props, "meses": meses}
 
 
 @app.get("/api/propriedade/{id_propriedade}")
@@ -109,9 +111,9 @@ def propriedade(id_propriedade: int):
 
 @app.get("/api/serie")
 def serie(supervisor: str | None = None, tecnico: str | None = None, propriedade: int | None = None,
-          projeto: str | None = None, situacao: str | None = None,
+          projeto: str | None = None, situacao: str | None = None, municipio: str | None = None,
           de: str | None = Query(None, description="YYYY-MM"), ate: str | None = Query(None, description="YYYY-MM")):
-    where, p = _where(supervisor, tecnico, projeto, propriedade, situacao)
+    where, p = _where(supervisor, tecnico, projeto, propriedade, situacao, municipio)
     p["de"] = max(de or MES_INICIO, MES_INICIO)
     where.append("mes >= :de")
     if ate:
@@ -128,7 +130,7 @@ def serie(supervisor: str | None = None, tecnico: str | None = None, propriedade
                COUNT(DISTINCT produtor)                 AS produtores
         FROM {TABLE} WHERE {' AND '.join(where)}
         GROUP BY mes ORDER BY mes"""
-    wp, pp = _where(supervisor, tecnico, projeto, propriedade)
+    wp, pp = _where(supervisor, tecnico, projeto, propriedade, None, municipio)
     # o card conta as propriedades ativas hoje; no filtro 'Inativas' conta as inativas
     wp.append("NOT ativa" if situacao == "inativa" else "ativa")
     with engine.connect() as con:
@@ -154,12 +156,12 @@ def serie(supervisor: str | None = None, tecnico: str | None = None, propriedade
 
 @app.get("/api/destaques")
 def destaques(supervisor: str | None = None, tecnico: str | None = None, propriedade: int | None = None,
-              projeto: str | None = None, situacao: str | None = None,
+              projeto: str | None = None, situacao: str | None = None, municipio: str | None = None,
               ate: str | None = Query(None, description="YYYY-MM")):
     """Destaques automáticos do mês de referência (por regras, sem IA): comparam o mês com o anterior,
     dentro dos filtros escolhidos. Se o último mês ainda está em andamento, usa o mês anterior (fechado)."""
     from datetime import date
-    where, p = _where(supervisor, tecnico, projeto, propriedade, situacao)
+    where, p = _where(supervisor, tecnico, projeto, propriedade, situacao, municipio)
     wsql = " AND ".join(where)
     sub = {"mi": MES_INICIO}
     sql_m = f"SELECT DISTINCT mes FROM {TABLE} WHERE mes >= :mi "
