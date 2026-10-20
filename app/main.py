@@ -116,6 +116,7 @@ def serie(supervisor: str | None = None, tecnico: str | None = None, propriedade
                COUNT(DISTINCT id_propriedade)           AS propriedades,
                COALESCE(SUM(producao_leite_l), 0)       AS producao,
                COALESCE(SUM(receita_bruta), 0)          AS receita_bruta,
+               COALESCE(SUM(venda_leite_rs), 0)         AS venda_leite,
                COALESCE(SUM(COALESCE(receita_bruta,0) - COALESCE(despesa_direta,0)), 0) AS margem_bruta,
                COALESCE(SUM(COALESCE(venda_leite_rs,0) - COALESCE(despesa_direta,0)), 0) AS margem_leite,
                COUNT(DISTINCT produtor)                 AS produtores
@@ -130,7 +131,7 @@ def serie(supervisor: str | None = None, tecnico: str | None = None, propriedade
         r["propriedades_total"] = int(total_props or 0)
     prev = None
     for r in rows:
-        for k in ("producao", "receita_bruta", "margem_bruta", "margem_leite"):
+        for k in ("producao", "receita_bruta", "venda_leite", "margem_bruta", "margem_leite"):
             r[k] = float(r[k])
         r["producao_media_produtor"] = round(r["producao"] / r["produtores"], 1) if r["produtores"] else 0
         r["var_receita_pct"] = None if not prev or not prev["receita_bruta"] else round((r["receita_bruta"] / prev["receita_bruta"] - 1) * 100, 1)
