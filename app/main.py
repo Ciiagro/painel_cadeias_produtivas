@@ -265,6 +265,116 @@ def destaques(supervisor: str | None = None, tecnico: str | None = None, proprie
              "pct": round((float(x["pr"]) / float(x["pr_a"]) - 1) * 100, 1)} for x in qd[:5]]}
     return out
 
+DESP = os.environ.get("DESP_NAME", "public.vw_despesa_subgrupo")
+
+
+@app.get("/api/causas")
+def causas(supervisor: str | None = None, tecnico: str | None = None, propriedade: int | None = None,
+           projeto: str | None = None, situacao: str | None = None, municipio: str | None = None,
+           de: str | None = Query(None, description="YYYY-MM"), ate: str | None = Query(None, description="YYYY-MM")):
+    """Aba 'Causas' (por regras, sem IA): quando as propriedades entraram/saíram, preço do leite fora do normal
+    e despesa direta por subgrupo. Tudo dentro dos filtros escolhidos."""
+    from datetime import date
+    where, p = _where(supervisor, tecnico, projeto, propriedade, situacao, municipio)
+    wsql = " AND ".join(where)
+    pp = {**p, "mi": MES_INICIO}
+    cate = ""
+    if ate:
+        cate = " AND mes <= :ate"; pp["ate"] = ate
+    de_ = max(de or MES_INICIO, MES_INICIO)
+    with engine.connect() as con:
+        meses = [r[0] for r in con.execute(text(f"SELECT DISTINCT mes FROM {TABLE} WHERE {wsql} AND mes >= :mi{cate} ORDER BY mes"), pp)]
+        if not meses:
+            return {}
+        # mês de referência = último mês fechado da BASE TODA (não do filtro): assim, ao filtrar só as inativas,
+        # quem parou de lançar continua aparecendo como "saída". Se o mais recente é o mês atual, usa o anterior.
+        gl = [r[0] for r in con.execute(text(f"SELECT DISTINCT mes FROM {TABLE} WHERE mes >= :mi{cate} ORDER BY mes DESC LIMIT 2"),
+                                          {k: v for k, v in pp.items() if k in ("mi", "ate")})]
+        m = gl[0]
+        if m == date.today().strftime("%Y-%m") and len(gl) > 1:
+            m = gl[1]
+        meses = [x for x in meses if x <= m]
+        if not meses:
+            return {}
+        no_periodo = [x for x in meses if x >= de_]
+        if de and de < m and no_periodo and no_periodo[0] < m:
+            a = no_periodo[0]
+        else:
+            a = meses[-2] if len(meses) > 1 else None
+        pp["m"] = m
+
+        # ---- 1) Entradas e saídas (primeiro/último mês com leite de cada propriedade)
+        base = f"""SELECT id_propriedade, propriedade, tecnico, ativa, fim_projeto, motivo_desativacao, mes,
+                          producao_leite_l AS pr, receita_bruta AS rb
+                   FROM {TABLE} WHERE {wsql} AND mes >= :mi AND mes <= :m"""
+        ult = con.execute(text(f"""SELECT id_propriedade, propriedade, tecnico, ativa, fim_projeto, motivo_desativacao, mes, rb FROM (
+                 SELECT b.*, ROW_NUMBER() OVER (PARTITION BY id_propriedade ORDER BY mes DESC) AS rn
+                 FROM ({base}) b WHERE pr > 0) x WHERE rn = 1"""), pp).mappings().all()
+        pri = con.execute(text(f"""SELECT id_propriedade, propriedade, tecnico, mes, rb FROM (
+                 SELECT b.*, ROW_NUMBER() OVER (PARTITION BY id_propriedade ORDER BY mes ASC) AS rn
+                 FROM ({base}) b WHERE pr > 0) x WHERE rn = 1"""), pp).mappings().all()
+        primeiro_mes_base = meses[0]
+        saidas = [r for r in ult if r["mes"] < m and r["mes"] >= de_]
+        entradas = [r for r in pri if r["mes"] >= de_ and r["mes"] > primeiro_mes_base]
+
+        def por_mes(linhas):
+            d = {}
+            for r in linhas:
+                x = d.setdefault(r["mes"], {"mes": r["mes"], "qtd": 0, "receita": 0.0})
+                x["qtd"] += 1; x["receita"] += float(r["rb"] or 0)
+            return [d[k] for k in sorted(d)]
+
+        def lista(linhas, saida):
+            out = []
+            for r in sorted(linhas, key=lambda r: -(float(r["rb"] or 0)))[:12]:
+                o = {"nome": r["propriedade"], "tecnico": r["tecnico"], "mes": r["mes"], "receita": float(r["rb"] or 0)}
+                if saida:
+                    o["ativa"] = bool(r["ativa"]); o["motivo"] = r["motivo_desativacao"]
+                    o["fim"] = str(r["fim_projeto"]) if r["fim_projeto"] else None
+                out.append(o)
+            return out
+
+        mov = {"saidas": {"total": len(saidas), "receita": sum(float(r["rb"] or 0) for r in saidas),
+                          "por_mes": por_mes(saidas), "lista": lista(saidas, True)},
+               "entradas": {"total": len(entradas), "receita": sum(float(r["rb"] or 0) for r in entradas),
+                            "por_mes": por_mes(entradas), "lista": lista(entradas, False)}}
+
+        # ---- 2) Preço do leite (venda de leite + bonificação ÷ litros vendidos)
+        serie_preco = []
+        for r in con.execute(text(f"""SELECT mes, SUM(venda_leite_rs) AS rs, SUM(leite_vendido_l) AS l FROM {TABLE}
+                 WHERE {wsql} AND mes >= :mi AND mes <= :m AND leite_vendido_l > 0 GROUP BY mes ORDER BY mes"""), pp).mappings():
+            if r["l"] and r["mes"] >= de_:
+                serie_preco.append({"mes": r["mes"], "preco": float(r["rs"] or 0) / float(r["l"])})
+        props = con.execute(text(f"""SELECT propriedade, tecnico, SUM(venda_leite_rs) AS rs, SUM(leite_vendido_l) AS l FROM {TABLE}
+                 WHERE {wsql} AND mes = :m AND leite_vendido_l > 0 GROUP BY id_propriedade, propriedade, tecnico"""), pp).mappings().all()
+        tot_l = sum(float(r["l"]) for r in props)
+        media = (sum(float(r["rs"] or 0) for r in props) / tot_l) if tot_l else None
+        fora = []
+        if media and len(props) > 1:
+            for r in props:
+                pr_ = float(r["rs"] or 0) / float(r["l"])
+                dev = (pr_ / media - 1) * 100
+                if abs(dev) >= 15:
+                    fora.append({"nome": r["propriedade"], "tecnico": r["tecnico"], "preco": pr_, "dev": round(dev, 1), "litros": float(r["l"])})
+        acima = sorted([x for x in fora if x["dev"] > 0], key=lambda x: -x["dev"])[:8]
+        abaixo = sorted([x for x in fora if x["dev"] < 0], key=lambda x: x["dev"])[:8]
+        preco = {"serie": serie_preco, "media": media, "mes": m, "acima": acima, "abaixo": abaixo, "total_fora": len(fora), "n": len(props)}
+
+        # ---- 3) Despesa direta por subgrupo
+        pd_ = {**p, "mi": MES_INICIO, "m": m, "a": a or "0000-00", "de": de_}
+        rows = con.execute(text(f"""SELECT subgrupo,
+                   COALESCE(SUM(valor) FILTER (WHERE mes >= :de AND mes <= :m), 0) AS total,
+                   COALESCE(SUM(valor) FILTER (WHERE mes = :m), 0) AS vm,
+                   COALESCE(SUM(valor) FILTER (WHERE mes = :a), 0) AS va
+                 FROM {DESP} WHERE {wsql} AND mes >= :mi AND mes <= :m GROUP BY subgrupo"""), pd_).mappings().all()
+        rows = sorted(rows, key=lambda r: -float(r["total"] or 0))
+        tot_geral = sum(float(r["total"] or 0) for r in rows) or 1
+        desp = [{"nome": r["subgrupo"], "total": float(r["total"] or 0), "pct": float(r["total"] or 0) / tot_geral * 100,
+                 "vm": float(r["vm"] or 0), "va": float(r["va"] or 0)} for r in rows if float(r["total"] or 0) > 0]
+    return {"mes": m, "anterior": a, "de": de_, "movimento": mov, "preco": preco,
+            "despesa": {"total": tot_geral if desp else 0, "itens": desp}}
+
+
 
 @app.get("/health")
 def health():

@@ -84,6 +84,16 @@
   .d-causa{display:grid;grid-template-columns:1fr auto;gap:2px 12px;padding:6px 0;border-bottom:1px solid var(--linha);font-size:13.5px}
   .d-causa:last-child{border-bottom:0} .d-causa small{grid-column:1 / -1;color:var(--mut);font-size:12.5px}
   .d-vazio{font-size:13px;color:var(--mut);margin:4px 0}
+  .c-tit{margin:18px 0 6px;font-size:15px;font-weight:700;padding-top:12px;border-top:1px solid var(--linha)}
+  h2 + .c-tit{border-top:0;padding-top:0;margin-top:8px}
+  .cv-s{height:230px;margin:6px 0 12px} .cv-m{height:300px;margin:6px 0 12px}
+  .t-simples{width:100%;min-width:0;border-collapse:collapse;font-size:13px}
+  .t-simples th:first-child,.t-simples td:first-child{position:static;border-right:0;background:transparent;white-space:normal}
+  .t-simples thead th:first-child{background:var(--suave)}
+  .t-simples th.n{text-align:right}
+  .t-simples th,.t-simples td{padding:6px 10px;border-bottom:1px solid var(--linha);text-align:left}
+  .t-simples th{position:sticky;top:0;background:var(--suave);font-weight:600}
+  .t-simples .n{text-align:right;white-space:nowrap}
   .graficos{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-bottom:20px}
   .graf{background:var(--surf);border:1px solid var(--linha);border-radius:12px;padding:14px 16px 10px;min-width:0}
   .graf h2{margin:0;font-size:16px;font-weight:600;display:flex;align-items:center;gap:10px;color:var(--cor)}
@@ -144,9 +154,11 @@
   <nav class="abas" role="tablist" aria-label="Seções do painel">
     <button type="button" role="tab" class="aba on" data-aba="graficos" aria-selected="true">Gráficos</button>
     <button type="button" role="tab" class="aba" data-aba="destaques" aria-selected="false">Destaques do mês</button>
+    <button type="button" role="tab" class="aba" data-aba="causas" aria-selected="false">Causas</button>
     <button type="button" role="tab" class="aba" data-aba="tabela" aria-selected="false">Tabela mensal</button>
   </nav>
   <section class="destaques" id="destaques" hidden></section>
+  <section class="destaques" id="causas" hidden></section>
   <div class="graficos" id="aba-graficos">
     <section class="graf" style="--cor:var(--c-receita)"><h2><span class="ico sm" data-ico="moedas"></span>Receita bruta (R$)</h2><p class="formula">Tudo que entrou na atividade, sem empréstimo nem investimento</p><div class="cv"><canvas id="c1"></canvas></div></section>
     <section class="graf" style="--cor:var(--c-venda)"><h2><span class="ico sm" data-ico="garrafa"></span>Venda de leite (R$)</h2><p class="formula">Leite in natura + bonificação por qualidade</p><div class="cv"><canvas id="c6"></canvas></div></section>
@@ -318,6 +330,7 @@ async function atualiza(){
     cartao('Margem bruta do leite', brl2(ult.margem_leite), ult.var_margem_leite_pct, d.map(x=>x.margem_leite), 'var(--c-mleite)', 'calc')
   ].join('') : '<p>Sem dados para o filtro.</p>';
   carregaDestaques(q, parcial);
+  carregaCausas(q);
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   desenha('c1', m, d.map(x=>x.receita_bruta), css('--c-receita'), 2, true, parcial);
   desenha('c6', m, d.map(x=>x.venda_leite), css('--c-venda'), 2, true, parcial);
@@ -365,11 +378,57 @@ function baixaExcel(){
   XLSX.writeFile(wb, `acompanhamento_${nome}_${$('de').value}_a_${$('ate').value}.xlsx`);
 }
 $('btnXls').onclick = baixaExcel;
+// ---- Aba "Causas": entradas/saídas de propriedades, preço do leite e despesa por subgrupo
+async function carregaCausas(q){
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const box = $('causas');
+  let d = {};
+  try { d = await (await fetch('/api/causas?' + q)).json(); } catch(e) { d = {}; }
+  if (!d || !d.mes || !d.movimento) { box.innerHTML = '<p class="d-vazio">Sem dados para o filtro escolhido.</p>'; return; }
+  const mv = d.movimento, pc = d.preco, dp = d.despesa;
+  const linha = (nome, valor, sub) => `<div class="d-item"><span>${nome}${sub ? '<br><small style="color:var(--mut)">' + sub + '</small>' : ''}</span><span>${valor}</span></div>`;
+  const bloco = (titulo, corpo) => `<div class="d-bloco"><h3>${titulo}</h3>${corpo || '<p class="d-vazio">Nenhuma.</p>'}</div>`;
+  const porMes = (l, cor) => l.map(x => linha(x.mes, `<span class="${cor}">${nf.format(x.qtd)} prop. · ${brl2(x.receita)}</span>`)).join('');
+  const quemSaiu = mv.saidas.lista.map(x => linha(x.nome, brl2(x.receita), `${x.tecnico || ''} · último leite em ${x.mes}` +
+      (x.ativa ? ' · ainda ativa, sem lançar' : ' · inativa' + (x.fim ? ' desde ' + x.fim : '') + (x.motivo ? ' (' + x.motivo + ')' : '')))).join('');
+  const quemEntrou = mv.entradas.lista.map(x => linha(x.nome, brl2(x.receita), `${x.tecnico || ''} · primeiro leite em ${x.mes}`)).join('');
+  const frase1 = `De <b>${d.de}</b> a <b>${d.mes}</b>: <b>${nf.format(mv.saidas.total)}</b> propriedade(s) pararam de lançar leite ` +
+      `(no último mês de cada uma elas somavam <b class="neg">${brl2(mv.saidas.receita)}</b> de receita bruta) e <b>${nf.format(mv.entradas.total)}</b> entraram ` +
+      `(<b class="pos">${brl2(mv.entradas.receita)}</b> no primeiro mês).`;
+  const fraseP = pc.media ? `Em <b>${pc.mes}</b> o preço médio recebido foi <b>R$ ${fmt(pc.media, 3)}/L</b> (venda + bonificação ÷ litros vendidos), ` +
+      (pc.n < 2 ? 'só há uma propriedade no filtro, então não há comparação.' : `e <b>${nf.format(pc.total_fora)}</b> de ${nf.format(pc.n)} propriedades ficaram 15% ou mais fora da média.`) : 'Sem litros vendidos no mês.';
+  const precoLista = l => l.map(x => linha(x.nome, `R$ ${fmt(x.preco, 3)}/L <span class="${x.dev>0?'pos':'neg'}">(${x.dev>0?'+':''}${fmt(x.dev,1)}%)</span>`, `${x.tecnico || ''} · ${nf.format(x.litros)} L vendidos`)).join('');
+  const comp = d.anterior || '';
+  const tabDesp = dp.itens.map(x => { const dl = x.vm - x.va; return `<tr><td>${x.nome}</td><td class="n">${brl2(x.total)}</td><td class="n">${fmt(x.pct,1)}%</td><td class="n">${brl2(x.vm)}</td>` +
+      `<td class="n ${comp ? (dl > 0 ? 'neg' : dl < 0 ? 'pos' : '') : ''}">${comp ? (dl>0?'+':dl<0?'−':'') + brl2(Math.abs(dl)) : '—'}</td></tr>`; }).join('');
+  box.innerHTML = `<h2>Causas e movimentos: ${d.de} a ${d.mes}</h2>
+    <h3 class="c-tit">Quando as propriedades entraram e saíram</h3><p class="d-resumo">${frase1}</p>
+    <div class="d-grid">${bloco('Saídas por mês (último leite lançado)', porMes(mv.saidas.por_mes, 'neg'))}${bloco('Quem saiu (maior receita)', quemSaiu)}
+      ${bloco('Entradas por mês (primeiro leite lançado)', porMes(mv.entradas.por_mes, 'pos'))}${bloco('Quem entrou (maior receita)', quemEntrou)}</div>
+    <h3 class="c-tit">Preço do leite</h3><p class="d-resumo">${fraseP}</p>
+    <div class="cv cv-s"><canvas id="cPreco"></canvas></div>
+    <div class="d-grid">${bloco('Preço acima da média', precoLista(pc.acima))}${bloco('Preço abaixo da média', precoLista(pc.abaixo))}</div>
+    <h3 class="c-tit">Despesa direta por subgrupo</h3><p class="d-resumo">Onde o dinheiro foi gasto no período (a soma dos subgrupos é a despesa direta do painel). Colunas de mês: <b>${d.mes}</b> e variação sobre <b>${comp || '—'}</b>.</p>
+    <div class="cv cv-m"><canvas id="cDesp"></canvas></div>
+    <div class="rolagem" style="max-height:340px"><table class="t-simples"><thead><tr><th>Subgrupo</th><th class="n">Total no período</th><th class="n">% do total</th><th class="n">${d.mes}</th><th class="n">Variação</th></tr></thead><tbody>${tabDesp || '<tr><td colspan="5">Sem despesa no período.</td></tr>'}</tbody></table></div>`;
+  ['cp', 'cd'].forEach(k => { if (charts[k]) { charts[k].destroy(); delete charts[k]; } });
+  const tick = {color: css('--mut'), font: {size: 11}};
+  if (pc.serie.length) charts.cp = new Chart($('cPreco'), {type: 'line',
+    data: {labels: pc.serie.map(x => x.mes), datasets: [{data: pc.serie.map(x => x.preco), borderColor: css('--c-venda'), backgroundColor: css('--c-venda'), tension: .25, pointRadius: 3}]},
+    options: {maintainAspectRatio: false, animation: reduz ? false : undefined, plugins: {legend: {display: false}, tooltip: {callbacks: {label: c => 'R$ ' + fmt(c.parsed.y, 3) + '/L'}}},
+      scales: {x: {ticks: tick, grid: {display: false}}, y: {ticks: {...tick, callback: v => 'R$ ' + fmt(v, 2)}, grace: '8%'}}}});
+  const top = dp.itens.slice(0, 10);
+  if (top.length) charts.cd = new Chart($('cDesp'), {type: 'bar',
+    data: {labels: top.map(x => x.nome), datasets: [{data: top.map(x => x.total), backgroundColor: css('--c-mat'), borderRadius: 4}]},
+    options: {indexAxis: 'y', maintainAspectRatio: false, animation: reduz ? false : undefined,
+      plugins: {legend: {display: false}, tooltip: {callbacks: {label: c => brl2(c.parsed.x) + ' (' + fmt(top[c.dataIndex].pct, 1) + '%)'}}},
+      scales: {x: {ticks: {...tick, callback: v => 'R$ ' + nf.format(v)}}, y: {ticks: tick, grid: {display: false}}}}});
+}
 function mostraAba(nome){
-  const alvos = {graficos:'aba-graficos', destaques:'destaques', tabela:'aba-tabela'};
+  const alvos = {graficos:'aba-graficos', destaques:'destaques', causas:'causas', tabela:'aba-tabela'};
   Object.entries(alvos).forEach(([n, id]) => { $(id).hidden = (n !== nome); });
   document.querySelectorAll('.aba').forEach(b => { const on = b.dataset.aba === nome; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); });
-  if (nome === 'graficos') Object.values(charts).forEach(c => c.resize());
+  if (nome === 'graficos' || nome === 'causas') Object.values(charts).forEach(c => c.resize());
 }
 document.querySelectorAll('.aba').forEach(b => b.onclick = () => mostraAba(b.dataset.aba));
 carregaFiltros().then(atualiza);

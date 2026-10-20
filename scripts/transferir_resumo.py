@@ -55,6 +55,7 @@ def main():
     destino = eng("REMOTE")
     copiar(origem, destino, "resumo_propriedades", ["id_propriedade", "tecnico"])
     copiar(origem, destino, "resumo_leite_mensal", ["id_propriedade", "mes"])
+    copiar(origem, destino, "resumo_despesa_subgrupo", ["id_propriedade", "mes"])
     # recria as views (o DROP CASCADE acima apaga as antigas)
     sql = (Path(__file__).resolve().parent.parent / "sql" / "vw_resumo_leite_mensal.sql").read_text(encoding="utf-8")
     with destino.begin() as con:

@@ -159,6 +159,34 @@ LEFT JOIN tec_mes t ON t.id_propriedade = f.id_propriedade AND t.mes = f.mes;
 CREATE INDEX ON public.resumo_leite_mensal (id_propriedade);
 CREATE INDEX ON public.resumo_leite_mensal (tecnico);
 CREATE INDEX ON public.resumo_leite_mensal (mes);
+-- ---------------------------------------------------------------------
+-- Despesa direta por SUBGRUPO e mês (mesma regra da despesa_direta acima; a soma dos subgrupos = despesa_direta)
+DROP TABLE IF EXISTS public.resumo_despesa_subgrupo;
+CREATE TABLE public.resumo_despesa_subgrupo AS
+WITH base AS (
+  SELECT r.* FROM public.sisateg_receita_despesa r
+  WHERE r.atividade = 'BOVINOCULTURA DE LEITE' AND r.status_item = 'ATIVO' AND r.tipo_registro = 'PRINCIPAL'
+    AND r.dt_referencia BETWEEN DATE '2024-06-01' AND DATE '2026-12-31'
+    AND r.grupo = 'Despesa'
+    AND r.id_propriedade IN (SELECT id_propriedade FROM public.resumo_propriedades)
+),
+q AS (
+  SELECT id_propriedade, id_visita, id_item, dt_referencia, subgrupo, item, SUM(valor) AS qtd
+  FROM base WHERE tipo_valor = 'QUANTIDADE' GROUP BY 1,2,3,4,5,6
+),
+pr AS (
+  SELECT id_propriedade, id_visita, id_item, dt_referencia, AVG(valor) AS preco
+  FROM base WHERE tipo_valor = 'VALOR_UNITARIO' GROUP BY 1,2,3,4
+)
+SELECT q.id_propriedade, to_char(date_trunc('month', q.dt_referencia), 'YYYY-MM') AS mes, q.subgrupo,
+       ROUND(SUM(q.qtd * pr.preco)::numeric, 2) AS valor
+FROM q JOIN pr USING (id_propriedade, id_visita, id_item, dt_referencia)
+WHERE q.subgrupo NOT ILIKE 'Empr%' AND q.subgrupo NOT ILIKE 'Investimento%'
+  AND q.subgrupo NOT ILIKE 'Aleitamento%' AND q.subgrupo NOT ILIKE 'Despesas com Forma%'
+  AND q.item NOT ILIKE 'M_o de obra familiar'
+GROUP BY 1,2,3;
+CREATE INDEX ON public.resumo_despesa_subgrupo (id_propriedade, mes);
+
 ANALYZE public.resumo_propriedades;
 ANALYZE public.resumo_leite_mensal;
 
