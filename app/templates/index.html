@@ -13,7 +13,7 @@
   :root{
     --bg:#edf1ee; --surf:#ffffff; --ink:#15251c; --mut:#5a6a61; --linha:#dbe3de; --suave:#f5f8f6;
     --verde:#1d6b45; --verde-esc:#134a2f; --pos:#1d6b45; --neg:#b3261e;
-    --c-receita:#1d6b45; --c-venda:#0b7a80; --c-prod:#2b59a8; --c-media:#7a5ba6; --c-mat:#c9730a; --c-mleite:#a23b72; --c-neutro:#4a5d52;
+    --c-receita:#1d6b45; --c-venda:#0b7a80; --c-prod:#2b59a8; --c-media:#7a5ba6; --c-mat:#c9730a; --c-mleite:#a23b72; --c-neutro:#4a5d52; --c-desp:#c0392b;
   }
   *{box-sizing:border-box}
   html{-webkit-text-size-adjust:100%}
@@ -171,7 +171,7 @@
   <section class="destaques" id="causas" hidden></section>
   <div class="graficos" id="aba-graficos">
     <section class="graf" style="--cor:var(--c-receita)"><h2><span class="ico sm" data-ico="moedas"></span>Receita bruta (R$)</h2><p class="formula">Tudo que entrou na atividade, sem empréstimo nem investimento</p><div class="cv"><canvas id="c1"></canvas></div></section>
-    <section class="graf" style="--cor:var(--c-mat)"><h2><span class="ico sm" data-ico="barras"></span>Receita × despesa direta (R$)</h2><p class="formula">Quanto entrou e quanto saiu na atividade, mês a mês</p><div class="cv"><canvas id="c7"></canvas></div></section>
+    <section class="graf" style="--cor:var(--c-desp)"><h2><span class="ico sm" data-ico="calc"></span>Despesa direta (R$)</h2><p class="formula">Gastos diretos da atividade, sem empréstimo, investimento, aleitamento e mão de obra familiar</p><div class="cv"><canvas id="c7"></canvas></div></section>
     <section class="graf" style="--cor:var(--c-venda)"><h2><span class="ico sm" data-ico="garrafa"></span>Venda de leite (R$)</h2><p class="formula">Leite in natura + bonificação por qualidade</p><div class="cv"><canvas id="c6"></canvas></div></section>
     <section class="graf" style="--cor:var(--c-venda)"><h2><span class="ico sm" data-ico="garrafa"></span>Preço médio do leite (R$/litro)</h2><p class="formula">Média dos preços das propriedades, sem bonificação (igual ao SisATeG)</p><div class="cv"><canvas id="c8"></canvas></div></section>
     <section class="graf" style="--cor:var(--c-prod)"><h2><span class="ico sm" data-ico="gota"></span>Produção de leite (litros)</h2><p class="formula">Vendido + consumido + bezerras</p><div class="cv"><canvas id="c2"></canvas></div></section>
@@ -220,24 +220,6 @@ const rotulosValores = {id:'rotulosValores', afterDatasetsDraw(chart){
   ctx.restore();
 }};
 
-function desenhaBarras(id, rotulos, receita, despesa, parcial){
-  if (charts[id]) charts[id].destroy();
-  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-  const n = receita.length, mil = v => fmt(v / 1000, 1);
-  const rot = {id:'rotBarras', afterDatasetsDraw(chart){
-    const {ctx} = chart; const passo = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(chart.chartArea.width / 125))));
-    ctx.save(); ctx.font = "600 10.5px 'IBM Plex Sans', system-ui, sans-serif"; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillStyle = '#15251c';
-    chart.data.datasets.forEach((ds, k) => chart.getDatasetMeta(k).data.forEach((b, i) => { if ((n - 1 - i) % passo === 0 && ds.data[i] != null) ctx.fillText(mil(ds.data[i]), b.x, b.y - 3); }));
-    ctx.restore(); }};
-  charts[id] = new Chart($(id), {type:'bar', plugins:[rot],
-    data:{labels:rotulos, datasets:[
-      {label:'Receita bruta', data:receita, backgroundColor:css('--verde-esc'), borderRadius:3},
-      {label:'Despesa direta', data:despesa, backgroundColor:'#f0b429', borderRadius:3}]},
-    options:{responsive:true, maintainAspectRatio:false, animation: reduz ? false : undefined, layout:{padding:{top:20}},
-      plugins:{legend:{position:'top', align:'end', labels:{boxWidth:10, boxHeight:10, usePointStyle:true}}, tooltip:{callbacks:{label: c => c.dataset.label + ': R$ ' + fmt(c.parsed.y, 2)}}},
-      scales:{x:{grid:{display:false}, ticks:{maxRotation:0, autoSkip:true, maxTicksLimit:12, callback(val){ const l = this.getLabelForValue(val); return l.slice(5) + '/' + l.slice(2,4); }}},
-              y:{beginAtZero:true, grid:{color:'#e6ece8'}, ticks:{callback:v=>nf.format(v/1000) + ' mil'}}}}});
-}
 function desenha(id, rotulos, valores, cor, casas, moeda, parcial, aceitaNegativo){
   if (charts[id]) charts[id].destroy();
   const n = valores.length;
@@ -367,8 +349,8 @@ async function atualiza(){
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   desenha('c1', m, d.map(x=>x.receita_bruta), css('--c-receita'), 2, true, parcial);
   desenha('c6', m, d.map(x=>x.venda_leite), css('--c-venda'), 2, true, parcial);
+  desenha('c7', m, d.map(x=>x.despesa_direta), css('--c-desp'), 2, true, parcial);
   desenha('c8', m, d.map(x=>x.preco_medio), css('--c-venda'), 2, true, parcial);
-  desenhaBarras('c7', m, d.map(x=>x.receita_bruta), d.map(x=>x.despesa_direta), parcial);
   desenha('c3', m, d.map(x=>x.margem_bruta), css('--c-mat'), 2, true, parcial, true);
   desenha('c4', m, d.map(x=>x.margem_leite), css('--c-mleite'), 2, true, parcial, true);
   desenha('c2', m, d.map(x=>x.producao), css('--c-prod'), 1, false, parcial);
@@ -435,7 +417,9 @@ async function carregaCausas(q){
       (pc.n < 2 ? 'só há uma propriedade no filtro, então não há comparação.' : `e <b>${nf.format(pc.total_fora)}</b> de ${nf.format(pc.n)} propriedades ficaram 15% ou mais fora da média.`) : 'Sem litros vendidos no mês.';
   const precoLista = l => l.map(x => linha(x.nome, `R$ ${fmt(x.preco, 2)}/L <span class="${x.dev>0?'pos':'neg'}">(${x.dev>0?'+':''}${fmt(x.dev,1)}%)</span>`, `${x.tecnico || ''} · ${nf.format(x.litros)} L vendidos`)).join('');
   const comp = d.anterior || '';
-  const tabDesp = dp.itens.map(x => `<tr><td>${x.nome}</td><td class="n">${brl2(x.total)}</td><td class="n">${fmt(x.pct,1)}%</td><td class="n">${brl2(x.vm)}</td></tr>`).join('');
+  const tabDesp = dp.itens.map(x => { const dl = x.vm - x.va, pc_ = x.va ? (x.vm / x.va - 1) * 100 : null, cl = dl > 0 ? 'neg' : dl < 0 ? 'pos' : '';
+    return `<tr><td>${x.nome}</td><td class="n">${brl2(x.total)}</td><td class="n">${fmt(x.pct,1)}%</td><td class="n">${comp ? brl2(x.va) : '—'}</td><td class="n">${brl2(x.vm)}</td>` +
+      `<td class="n ${cl}">${comp ? (dl>0?'+':dl<0?'−':'') + brl2(Math.abs(dl)) : '—'}</td><td class="n ${cl}">${pc_ == null ? '–' : (pc_>0?'+':'') + fmt(pc_,1) + '%'}</td></tr>`; }).join('');
   box.innerHTML = `<h2>Causas e movimentos: ${d.de} a ${d.mes}</h2>
     <h3 class="c-tit">Quando as propriedades entraram e saíram</h3><p class="d-resumo">${frase1}</p>
     <div class="d-grid">${bloco('Saídas por mês (último leite lançado)', porMes(mv.saidas.por_mes, 'neg'))}${bloco('Quem saiu (maior receita)', quemSaiu)}
@@ -443,9 +427,9 @@ async function carregaCausas(q){
     <h3 class="c-tit">Preço do leite</h3><p class="d-resumo">${fraseP}</p>
     <div class="cv cv-s"><canvas id="cPreco"></canvas></div>
     <div class="d-grid">${bloco('Preço acima da média', precoLista(pc.acima))}${bloco('Preço abaixo da média', precoLista(pc.abaixo))}</div>
-    <h3 class="c-tit">Despesa direta por subgrupo</h3><p class="d-resumo">Onde o dinheiro foi gasto no período (a soma dos subgrupos é a despesa direta do painel). A última coluna mostra só o mês <b>${d.mes}</b>.</p>
+    <h3 class="c-tit">Despesa direta por subgrupo</h3><p class="d-resumo">Onde o dinheiro foi gasto no período (a soma dos subgrupos é a despesa direta do painel). Compara o mês inicial (<b>${comp || '—'}</b>) com o mês final (<b>${d.mes}</b>): vermelho = a despesa subiu, verde = caiu.</p>
     <div class="cv cv-m"><canvas id="cDesp"></canvas></div>
-    <div class="rolagem" style="max-height:340px"><table class="t-simples"><thead><tr><th>Subgrupo</th><th class="n">Total no período</th><th class="n">% do total</th><th class="n">Só em ${d.mes}</th></tr></thead><tbody>${tabDesp || '<tr><td colspan="4">Sem despesa no período.</td></tr>'}</tbody></table></div>`;
+    <div class="rolagem" style="max-height:340px"><table class="t-simples"><thead><tr><th>Subgrupo</th><th class="n">Total no período</th><th class="n">% do total</th><th class="n">Mês inicial<br><small>${comp || '—'}</small></th><th class="n">Mês final<br><small>${d.mes}</small></th><th class="n">Variação (R$)<br><small>final − inicial</small></th><th class="n">Variação (%)</th></tr></thead><tbody>${tabDesp || '<tr><td colspan="7">Sem despesa no período.</td></tr>'}</tbody></table></div>`;
   ['cp', 'cd'].forEach(k => { if (charts[k]) { charts[k].destroy(); delete charts[k]; } });
   const tick = {color: css('--mut'), font: {size: 11}};
   if (pc.serie.length) charts.cp = new Chart($('cPreco'), {type: 'line',
