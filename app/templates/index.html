@@ -104,6 +104,8 @@
   .graficos{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-bottom:20px}
   .graf{background:var(--surf);border:1px solid var(--linha);border-radius:12px;padding:14px 16px 10px;min-width:0}
   .graf h2{margin:0;font-size:16px;font-weight:600;display:flex;align-items:center;gap:10px;color:var(--cor)}
+  .graf h2 .pill{margin-left:auto;text-align:center;padding:6px 12px;border-radius:10px;min-width:112px;background:color-mix(in srgb,var(--cor) 11%,white);color:var(--cor);font-weight:400}
+  .graf h2 .pill b{display:block;font-size:13.5px;font-weight:700;white-space:nowrap} .graf h2 .pill small{font-size:10.5px;opacity:.85;font-weight:400}
   .graf .formula{margin:4px 0 6px 42px;font-size:12.5px;color:var(--mut)}
   .cv{position:relative;height:300px}
 
@@ -170,14 +172,14 @@
   <section class="destaques" id="destaques" hidden></section>
   <section class="destaques" id="causas" hidden></section>
   <div class="graficos" id="aba-graficos">
-    <section class="graf" style="--cor:var(--c-receita)"><h2><span class="ico sm" data-ico="moedas"></span>Receita bruta (R$)</h2><p class="formula">Tudo que entrou na atividade, sem empréstimo nem investimento</p><div class="cv"><canvas id="c1"></canvas></div></section>
-    <section class="graf" style="--cor:var(--c-desp)"><h2><span class="ico sm" data-ico="calc"></span>Despesa direta (R$)</h2><p class="formula">Gastos diretos da atividade, sem empréstimo, investimento, aleitamento e mão de obra familiar</p><div class="cv"><canvas id="c7"></canvas></div></section>
-    <section class="graf" style="--cor:var(--c-venda)"><h2><span class="ico sm" data-ico="garrafa"></span>Venda de leite (R$)</h2><p class="formula">Leite in natura + bonificação por qualidade</p><div class="cv"><canvas id="c6"></canvas></div></section>
-    <section class="graf" style="--cor:var(--c-venda)"><h2><span class="ico sm" data-ico="garrafa"></span>Preço médio do leite (R$/litro)</h2><p class="formula">Média dos preços das propriedades, sem bonificação (igual ao SisATeG)</p><div class="cv"><canvas id="c8"></canvas></div></section>
-    <section class="graf" style="--cor:var(--c-prod)"><h2><span class="ico sm" data-ico="gota"></span>Produção de leite (litros)</h2><p class="formula">Vendido + consumido + bezerras</p><div class="cv"><canvas id="c2"></canvas></div></section>
-    <section class="graf" style="--cor:var(--c-mat)"><h2><span class="ico sm" data-ico="barras"></span>Margem bruta da atividade (R$)</h2><p class="formula">Receita bruta &minus; despesa direta</p><div class="cv"><canvas id="c3"></canvas></div></section>
-    <section class="graf" style="--cor:var(--c-mleite)"><h2><span class="ico sm" data-ico="calc"></span>Margem bruta do leite (R$)</h2><p class="formula">Receita do leite &minus; despesa direta</p><div class="cv"><canvas id="c4"></canvas></div></section>
-    <section class="graf" style="--cor:var(--c-media)"><h2><span class="ico sm" data-ico="pessoas"></span>Produção média por produtor (litros)</h2><p class="formula">Produção ÷ produtores com leite no mês</p><div class="cv"><canvas id="c5"></canvas></div></section>
+    <section class="graf" style="--cor:var(--c-receita)"><h2><span class="ico sm" data-ico="moedas"></span>Receita bruta (R$)<span class="pill" id="pl-c1"><b>–</b><small>Total no período</small></span></h2><p class="formula">Tudo que entrou na atividade, sem empréstimo nem investimento</p><div class="cv"><canvas id="c1"></canvas></div></section>
+    <section class="graf" style="--cor:var(--c-desp)"><h2><span class="ico sm" data-ico="calc"></span>Despesa direta (R$)<span class="pill" id="pl-c7"><b>–</b><small>Total no período</small></span></h2><p class="formula">Gastos diretos da atividade, sem empréstimo, investimento, aleitamento e mão de obra familiar</p><div class="cv"><canvas id="c7"></canvas></div></section>
+    <section class="graf" style="--cor:var(--c-venda)"><h2><span class="ico sm" data-ico="garrafa"></span>Venda de leite (R$)<span class="pill" id="pl-c6"><b>–</b><small>Total no período</small></span></h2><p class="formula">Leite in natura + bonificação por qualidade</p><div class="cv"><canvas id="c6"></canvas></div></section>
+    <section class="graf" style="--cor:var(--c-venda)"><h2><span class="ico sm" data-ico="garrafa"></span>Preço médio do leite (R$/litro)<span class="pill" id="pl-c8"><b>–</b><small>Total no período</small></span></h2><p class="formula">Média dos preços das propriedades, sem bonificação (igual ao SisATeG)</p><div class="cv"><canvas id="c8"></canvas></div></section>
+    <section class="graf" style="--cor:var(--c-prod)"><h2><span class="ico sm" data-ico="gota"></span>Produção de leite (litros)<span class="pill" id="pl-c2"><b>–</b><small>Total no período</small></span></h2><p class="formula">Vendido + consumido + bezerras</p><div class="cv"><canvas id="c2"></canvas></div></section>
+    <section class="graf" style="--cor:var(--c-mat)"><h2><span class="ico sm" data-ico="barras"></span>Margem bruta da atividade (R$)<span class="pill" id="pl-c3"><b>–</b><small>Total no período</small></span></h2><p class="formula">Receita bruta &minus; despesa direta</p><div class="cv"><canvas id="c3"></canvas></div></section>
+    <section class="graf" style="--cor:var(--c-mleite)"><h2><span class="ico sm" data-ico="calc"></span>Margem bruta do leite (R$)<span class="pill" id="pl-c4"><b>–</b><small>Total no período</small></span></h2><p class="formula">Receita do leite &minus; despesa direta</p><div class="cv"><canvas id="c4"></canvas></div></section>
+    <section class="graf" style="--cor:var(--c-media)"><h2><span class="ico sm" data-ico="pessoas"></span>Produção média por produtor (litros)<span class="pill" id="pl-c5"><b>–</b><small>Total no período</small></span></h2><p class="formula">Produção ÷ produtores com leite no mês</p><div class="cv"><canvas id="c5"></canvas></div></section>
   </div>
   <section class="detalhe" id="aba-tabela" hidden><div class="d-topo"><h2>Detalhe mensal</h2><span class="xls-msg" id="xlsMsg"></span><button class="btn sec" id="btnXls" type="button"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M5 21h14"/></svg>Baixar Excel</button></div><div class="rolagem"><table id="tab"></table></div></section>
 </div>
@@ -351,6 +353,16 @@ async function atualiza(){
   carregaDestaques(q, parcial);
   carregaCausas(q);
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const soma = f => d.reduce((a,x)=>a+(+x[f]||0),0), media = f => { const v = d.map(x=>x[f]).filter(z=>z!=null); return v.length ? v.reduce((a,z)=>a+z,0)/v.length : null; };
+  const setPill = (id, v, moeda, rot, casas) => { const el = $('pl-'+id); if (!el) return; el.innerHTML = `<b>${v==null?'–':(moeda?'R$ ':'')+fmt(v,casas)}</b><small>${rot}</small>`; };
+  setPill('c1', soma('receita_bruta'), true, 'Total no período', 2);
+  setPill('c7', soma('despesa_direta'), true, 'Total no período', 2);
+  setPill('c6', soma('venda_leite'), true, 'Total no período', 2);
+  setPill('c8', media('preco_medio'), true, 'Média no período', 2);
+  setPill('c2', soma('producao'), false, 'Total no período', 0);
+  setPill('c3', soma('margem_bruta'), true, 'Total no período', 2);
+  setPill('c4', soma('margem_leite'), true, 'Total no período', 2);
+  setPill('c5', media('producao_media_produtor'), false, 'Média no período', 0);
   desenha('c1', m, d.map(x=>x.receita_bruta), css('--c-receita'), 2, true, parcial);
   desenha('c6', m, d.map(x=>x.venda_leite), css('--c-venda'), 2, true, parcial);
   desenha('c7', m, d.map(x=>x.despesa_direta), css('--c-desp'), 2, true, parcial);
