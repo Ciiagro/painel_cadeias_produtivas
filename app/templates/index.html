@@ -258,7 +258,11 @@ function preenche(sel, itens){
 }
 async function carregaFiltros(){
   const f = await (await fetch('/api/filtros?'+new URLSearchParams({projeto:$('proj').value, supervisor:$('sup').value, tecnico:$('tec').value, municipio:$('mun').value, situacao:$('sit').value}))).json();
-  if(!$('de').dataset.ok){ f.meses.forEach(m=>{$('de').add(new Option(m,m)); $('ate').add(new Option(m,m));}); $('de').value=f.meses[0]; $('ate').value=f.meses[f.meses.length-1]; $('de').dataset.ok=1; }
+  if(!$('de').dataset.ok){ f.meses.forEach(m=>{$('de').add(new Option(m,m)); $('ate').add(new Option(m,m));}); $('de').value=f.meses[0];
+    // abre sempre no último mês FECHADO: se o mais recente é o mês atual (ainda em lançamento), usa o anterior
+    const hoje = new Date(), atual = hoje.getFullYear() + '-' + String(hoje.getMonth() + 1).padStart(2, '0');
+    let fim = f.meses[f.meses.length-1]; if (fim === atual && f.meses.length > 1) fim = f.meses[f.meses.length-2];
+    $('ate').value = fim; $('de').dataset.ok=1; }
   preenche($('proj'), f.projetos); preenche($('sup'), f.supervisores); preenche($('tec'), f.tecnicos); preenche($('mun'), f.municipios);
   const pa = $('prop').value; $('prop').length = 1; f.propriedades.forEach(p=>$('prop').add(new Option(p.nome+' ('+p.id+')', p.id)));
   $('prop').value = f.propriedades.some(p=>String(p.id)===pa)?pa:'';
