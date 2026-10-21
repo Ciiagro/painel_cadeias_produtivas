@@ -136,8 +136,17 @@ def serie(supervisor: str | None = None, tecnico: str | None = None, propriedade
     with engine.connect() as con:
         rows = [dict(r._mapping) for r in con.execute(text(sql), p)]
         total_props = con.execute(text(f"SELECT COUNT(DISTINCT id_propriedade) FROM {PROPS} WHERE {' AND '.join(wp)}"), pp).scalar()
+    # Preço médio do leite = média dos preços de cada propriedade no mês (leite in natura ÷ litros, sem bonificação), como no SisATeG
+    preco_mes = {}
+    with engine.connect() as con:
+        for r in con.execute(text(f"""SELECT mes, id_propriedade, SUM(leite_in_natura_rs) AS rs, SUM(leite_vendido_l) AS l
+                FROM {TABLE} WHERE {' AND '.join(where)} AND leite_vendido_l > 0 GROUP BY mes, id_propriedade"""), p).mappings():
+            if r["l"] and float(r["l"]) > 0 and r["rs"] is not None:
+                preco_mes.setdefault(r["mes"], []).append(float(r["rs"]) / float(r["l"]))
     for r in rows:
         r["propriedades_total"] = int(total_props or 0)
+        ps = preco_mes.get(r["mes"])
+        r["preco_medio"] = round(sum(ps) / len(ps), 4) if ps else None
     prev = None
     for r in rows:
         for k in ("producao", "receita_bruta", "venda_leite", "despesa_direta", "margem_bruta", "margem_leite"):
@@ -150,6 +159,7 @@ def serie(supervisor: str | None = None, tecnico: str | None = None, propriedade
         r["var_margem_pct"] = None if not prev or not prev["margem_bruta"] else round((r["margem_bruta"] / abs(prev["margem_bruta"]) - 1) * 100, 1)
         r["var_margem_leite_pct"] = None if not prev or not prev["margem_leite"] else round((r["margem_leite"] / abs(prev["margem_leite"]) - 1) * 100, 1)
         r["var_prod_media_pct"] = None if not prev or not prev["producao_media_produtor"] else round((r["producao_media_produtor"] / prev["producao_media_produtor"] - 1) * 100, 1)
+        r["var_preco_pct"] = None if not prev or not prev["preco_medio"] or r["preco_medio"] is None else round((r["preco_medio"] / prev["preco_medio"] - 1) * 100, 1)
         prev = r
     return rows
 
