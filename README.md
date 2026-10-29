@@ -35,7 +35,7 @@ Abrir http://localhost:8000
 Conferido contra o relatório do SisATeG para o técnico Alexson em set/2026 (29 propriedades, 21.358 L,
 R$ 48.010,46 de receita, R$ 29.797,22 de despesa direta, margem R$ 18.213).
 
-**Rotina de atualização (hoje manual), nesta ordem:**
+**Rotina de atualização: `atualizar_leite.bat` (ver ESTADO_BOVINOCULTURA.md). Passos que ele executa, nesta ordem:**
 1. `python scripts/carga_incremental.py sisateg_receita` e `... sisateg_despesa` (janela móvel de 120 dias; corrige a carga
    antiga que deixava visitas para trás). As demais tabelas da API continuam com os scripts de sempre.
 2. Refazer `sisateg_receita_despesa` (receita + despesa empilhadas): `sql/refazer_receita_despesa.sql` (passo A e passo B).

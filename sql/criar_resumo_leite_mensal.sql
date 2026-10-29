@@ -87,51 +87,107 @@ CREATE INDEX ON public.resumo_propriedades (id_propriedade);
 CREATE INDEX ON public.resumo_propriedades (tecnico);
 
 -- ---------------------------------------------------------------------
+-- Lista (pequena, com índice) das visitas EXCLUÍDAS no SisATeG (dt_exclusao_visita preenchida): calculada uma vez e usada nas 3 tabelas abaixo.
+-- Visitas só "Inválidas" (sem data de exclusão) continuam valendo: o SisATeG também conta essas na planilha.
+DROP TABLE IF EXISTS tmp_visitas_invalidas;
+CREATE TEMP TABLE tmp_visitas_invalidas AS
+  SELECT DISTINCT id_visita::text AS id FROM public.sisateg_rel_listar_visita
+  WHERE dt_exclusao_visita IS NOT NULL;
+CREATE INDEX ON tmp_visitas_invalidas (id);
+ANALYZE tmp_visitas_invalidas;
+
+-- Filtra a tabela grande UMA vez só; os 3 resumos abaixo usam esta cópia menor (bem mais rápido)
+DROP TABLE IF EXISTS tmp_base;
+CREATE TEMP TABLE tmp_base AS
+SELECT r.* FROM public.sisateg_receita_despesa r
+WHERE r.atividade = 'BOVINOCULTURA DE LEITE' AND r.status_item = 'ATIVO' AND r.tipo_registro = 'PRINCIPAL'
+  AND r.dt_referencia >= DATE '2024-06-01' AND r.dt_referencia < CURRENT_DATE + 1
+  AND NOT EXISTS (SELECT 1 FROM tmp_visitas_invalidas iv WHERE iv.id = r.id_visita::text)
+  AND r.id_propriedade IN (SELECT id_propriedade FROM public.resumo_propriedades);
+CREATE INDEX ON tmp_base (id_visita, id_item);
+ANALYZE tmp_base;
+-- Preço ATIVO que só existe como DETALHADO (o SisATeG usa): entra quando o item tem quantidade ativa e NENHUM preço ativo principal
+INSERT INTO tmp_base
+SELECT r.* FROM public.sisateg_receita_despesa r
+WHERE r.atividade = 'BOVINOCULTURA DE LEITE' AND r.status_item = 'ATIVO' AND r.tipo_registro = 'DETALHADO'
+  AND r.tipo_valor = 'VALOR_UNITARIO' AND r.valor IS NOT NULL
+  AND r.dt_referencia >= DATE '2024-06-01' AND r.dt_referencia < CURRENT_DATE + 1
+  AND NOT EXISTS (SELECT 1 FROM tmp_visitas_invalidas iv WHERE iv.id = r.id_visita::text)
+  AND r.id_propriedade IN (SELECT id_propriedade FROM public.resumo_propriedades)
+  AND EXISTS (SELECT 1 FROM tmp_base q WHERE q.id_visita = r.id_visita AND q.id_item = r.id_item AND q.dt_referencia = r.dt_referencia AND q.tipo_valor = 'QUANTIDADE')
+  AND NOT EXISTS (SELECT 1 FROM tmp_base p WHERE p.id_visita = r.id_visita AND p.id_item = r.id_item AND p.dt_referencia = r.dt_referencia AND p.tipo_valor = 'VALOR_UNITARIO');
+UPDATE tmp_base SET tipo_registro = 'PRINCIPAL' WHERE tipo_registro = 'DETALHADO';   -- (só as linhas de preço acrescentadas acima eram detalhadas)
+-- O mês de cada visita é o da REFERÊNCIA DA VISITA (é assim que a planilha do SisATeG conta); a data do item só vale se a visita não tiver referência
+UPDATE tmp_base b SET dt_referencia = to_date(lv.referencia_visita || '-01', 'YYYY-MM-DD')
+FROM public.sisateg_rel_listar_visita lv
+WHERE lv.id_visita::text = b.id_visita::text AND lv.referencia_visita ~ '^[0-9]{4}-[0-9]{2}$'
+  AND ABS(to_date(lv.referencia_visita || '-01', 'YYYY-MM-DD') - b.dt_referencia::date) <= 366;   -- referência muito distante da data do item (ex.: visita de 2023 editada em 2026) é ignorada
+-- Visita SEM referência válida: o mês dela passa a ser o mais recente entre os itens dela
+UPDATE tmp_base b SET dt_referencia = m.mx
+FROM (SELECT b2.id_visita, MAX(b2.dt_referencia) AS mx
+      FROM tmp_base b2
+      WHERE NOT EXISTS (SELECT 1 FROM public.sisateg_rel_listar_visita lv
+                        WHERE lv.id_visita::text = b2.id_visita::text AND lv.referencia_visita ~ '^[0-9]{4}-[0-9]{2}$')
+      GROUP BY 1) m
+WHERE m.id_visita = b.id_visita AND b.dt_referencia < m.mx;
+CREATE INDEX ON tmp_base (id_propriedade, id_visita);
+ANALYZE tmp_base;
+
+-- nomes de supervisor sem acento quebrado, para recompor os que vêm corrompidos da origem (calculado UMA vez)
+DROP TABLE IF EXISTS tmp_sup_ok;
+CREATE TEMP TABLE tmp_sup_ok AS
+  SELECT DISTINCT supervisor_atual AS s FROM public.acompanhamento_mensal_visitas
+  WHERE supervisor_atual IS NOT NULL AND supervisor_atual NOT LIKE '%&#65533;%'
+  UNION
+  SELECT DISTINCT supervisor_atual FROM public.propriedades_ativas_na_ateg
+  WHERE supervisor_atual IS NOT NULL AND supervisor_atual NOT LIKE '%&#65533;%';
+ANALYZE tmp_sup_ok;
+
+-- técnico e supervisor de cada visita (só das visitas que interessam), com índice
+DROP TABLE IF EXISTS tmp_av;
+CREATE TEMP TABLE tmp_av AS
+  SELECT av.id_visita::text AS id,
+         MAX(btrim(av.tecnico_responsavel, E' \t\r\n')) AS tecnico,
+         MAX(NULLIF(btrim(av.supervisor_atual, E' \t\r\n'), '')) AS sup
+  FROM public.acompanhamento_mensal_visitas av
+  WHERE av.id_visita::text IN (SELECT DISTINCT id_visita::text FROM tmp_base)
+  GROUP BY 1;
+CREATE INDEX ON tmp_av (id);
+ANALYZE tmp_av;
+
 DROP TABLE IF EXISTS public.resumo_leite_mensal;
-CREATE TABLE public.resumo_leite_mensal AS
-WITH param AS (
-  SELECT DATE '2024-06-01' AS data_inicio, DATE '2026-12-31' AS data_fim
-),
-base AS (
-  SELECT r.*
-  FROM public.sisateg_receita_despesa r, param p
-  WHERE r.atividade = 'BOVINOCULTURA DE LEITE'
-    AND r.status_item = 'ATIVO'
-    AND r.tipo_registro = 'PRINCIPAL'
-    AND r.dt_referencia BETWEEN p.data_inicio AND p.data_fim
-    AND r.id_propriedade IN (SELECT id_propriedade FROM public.resumo_propriedades)
-),
-q AS (
+-- Etapas (cada uma vira tabela temporária; o tempo de cada uma aparece no .bat)
+DROP TABLE IF EXISTS tmp_q;
+CREATE TEMP TABLE tmp_q AS
   SELECT id_propriedade, grupo, id_visita, id_item, dt_referencia, subgrupo, item, SUM(valor) AS qtd
-  FROM base WHERE tipo_valor = 'QUANTIDADE' GROUP BY 1,2,3,4,5,6,7
-),
-pr AS (
+  FROM tmp_base WHERE tipo_valor = 'QUANTIDADE' GROUP BY 1,2,3,4,5,6,7;
+DROP TABLE IF EXISTS tmp_pr;
+CREATE TEMP TABLE tmp_pr AS
   SELECT id_propriedade, grupo, id_visita, id_item, dt_referencia, AVG(valor) AS preco
-  FROM base WHERE tipo_valor = 'VALOR_UNITARIO' GROUP BY 1,2,3,4,5
-),
-v AS (
+  FROM tmp_base WHERE tipo_valor = 'VALOR_UNITARIO' GROUP BY 1,2,3,4,5;
+CREATE INDEX ON tmp_q (id_propriedade, id_visita, id_item);
+CREATE INDEX ON tmp_pr (id_propriedade, id_visita, id_item);
+ANALYZE tmp_q;
+ANALYZE tmp_pr;
+DROP TABLE IF EXISTS tmp_v;
+CREATE TEMP TABLE tmp_v AS
   SELECT q.id_propriedade, date_trunc('month', q.dt_referencia)::date AS mes,
          q.grupo, q.subgrupo, q.item, q.qtd, q.qtd * pr.preco AS valor
-  FROM q JOIN pr USING (id_propriedade, grupo, id_visita, id_item, dt_referencia)
-),
-tec_mes AS (  -- técnico responsável pela visita daquele mês (técnico da época)
-  SELECT b.id_propriedade, date_trunc('month', b.dt_referencia)::date AS mes,
-         MAX(btrim(av.tecnico_responsavel, E' \t\r\n')) AS tecnico
-  FROM base b
-  JOIN public.acompanhamento_mensal_visitas av ON av.id_visita::text = b.id_visita::text
-  GROUP BY 1, 2
-),
-fin AS (
+  FROM tmp_q q JOIN tmp_pr pr USING (id_propriedade, grupo, id_visita, id_item, dt_referencia);
+ANALYZE tmp_v;
+DROP TABLE IF EXISTS tmp_fin;
+CREATE TEMP TABLE tmp_fin AS
   SELECT id_propriedade, mes,
     SUM(qtd) FILTER (WHERE grupo = 'Receita' AND item ILIKE 'Venda de leite in natura%') AS leite_vendido_l,
     SUM(qtd) FILTER (WHERE grupo = 'Despesa' AND item ILIKE 'Leite consumido%') AS leite_consumido_l,
     SUM(qtd) FILTER (WHERE grupo = 'Despesa' AND item ILIKE 'Leite para bezerra%') AS leite_bezerras_l,
+    SUM(qtd) FILTER (WHERE grupo = 'Despesa' AND item ILIKE 'Leite de descarte%') AS leite_descarte_l,   -- o SisATeG conta o leite descartado como produzido
     SUM(valor) FILTER (WHERE grupo = 'Receita' AND item ILIKE 'Venda de leite in natura%') AS leite_in_natura_rs,
     SUM(valor) FILTER (WHERE grupo = 'Receita'
          AND (item ILIKE 'Venda de leite in natura%' OR item ILIKE 'Bonifica%')) AS venda_leite_rs,
     SUM(valor) FILTER (WHERE grupo = 'Receita'
          AND subgrupo NOT ILIKE 'Empr%' AND subgrupo NOT ILIKE 'Investimento%'
-         AND (subgrupo <> 'Venda de leite' OR item ILIKE 'Venda de leite in natura%' OR item ILIKE 'Bonifica%')) AS receita_bruta,
+         AND (subgrupo <> 'Venda de leite' OR item ILIKE 'Venda de leite in natura%' OR item ILIKE 'Bonifica%' OR item ILIKE 'Divis%sobras%')) AS receita_bruta,   -- sobras de cooperativa são receita
     SUM(valor) FILTER (WHERE grupo = 'Despesa'
          AND subgrupo NOT ILIKE 'Empr%' AND subgrupo NOT ILIKE 'Investimento%') AS despesa_total,
     SUM(valor) FILTER (WHERE grupo = 'Despesa'
@@ -139,15 +195,39 @@ fin AS (
          AND subgrupo NOT ILIKE 'Aleitamento%' AND subgrupo NOT ILIKE 'Despesas com Forma%' AND item NOT ILIKE 'M_o de obra familiar') AS despesa_direta,
     SUM(valor) FILTER (WHERE grupo = 'Despesa' AND item ILIKE 'M_o de obra familiar') AS mao_obra_familiar,
     SUM(valor) FILTER (WHERE grupo = 'Despesa' AND subgrupo ILIKE 'Aleitamento%') AS despesa_aleitamento
-  FROM v GROUP BY 1,2
-)
+  FROM tmp_v GROUP BY 1,2;
+DROP TABLE IF EXISTS tmp_tec;
+CREATE TEMP TABLE tmp_tec AS
+  -- técnico responsável pela visita daquele mês (técnico da época)
+  SELECT b.id_propriedade, date_trunc('month', b.dt_referencia)::date AS mes,
+         MAX(av.tecnico) AS tecnico,
+         MAX(av.sup) AS supervisor_raw   -- supervisor DA ÉPOCA da visita
+  FROM tmp_base b
+  JOIN tmp_av av ON av.id = b.id_visita::text
+  GROUP BY 1, 2;
+DROP TABLE IF EXISTS tmp_vis;
+CREATE TEMP TABLE tmp_vis AS
+  -- visita(s) do mês (normalmente uma); serve para conferir com a planilha do SisATeG
+  SELECT id_propriedade, date_trunc('month', dt_referencia)::date AS mes, string_agg(DISTINCT id_visita::text, ',' ORDER BY id_visita::text) AS id_visita
+  FROM tmp_base GROUP BY 1, 2;
+ANALYZE tmp_fin;
+ANALYZE tmp_tec;
+ANALYZE tmp_vis;
+
+CREATE TABLE public.resumo_leite_mensal AS
 SELECT f.id_propriedade,
        to_char(f.mes, 'YYYY-MM') AS mes,
        t.tecnico,
-       ROUND((COALESCE(f.leite_vendido_l,0) + COALESCE(f.leite_consumido_l,0) + COALESCE(f.leite_bezerras_l,0))::numeric, 1) AS producao_leite_l,
+       CASE WHEN t.supervisor_raw LIKE '%&#65533;%'   -- nome com acento quebrado na origem: recompõe pelo nome certo (sup_ok)
+            THEN COALESCE(sc.s, CASE WHEN t.supervisor_raw = 'JOS&#65533; EDILTON LOUSADA J&#65533;NIOR' THEN 'JOSÉ EDILTON LOUSADA JÚNIOR'
+                                     ELSE replace(t.supervisor_raw, '&#65533;', '') END)
+            ELSE t.supervisor_raw END AS supervisor,
+       vm.id_visita,
+       ROUND((COALESCE(f.leite_vendido_l,0) + COALESCE(f.leite_consumido_l,0) + COALESCE(f.leite_bezerras_l,0) + COALESCE(f.leite_descarte_l,0))::numeric, 1) AS producao_leite_l,
        ROUND(f.leite_vendido_l::numeric, 1)     AS leite_vendido_l,
        ROUND(f.leite_consumido_l::numeric, 1)   AS leite_consumido_l,
        ROUND(f.leite_bezerras_l::numeric, 1)    AS leite_bezerras_l,
+       ROUND(f.leite_descarte_l::numeric, 1)    AS leite_descarte_l,
        ROUND(f.leite_in_natura_rs::numeric, 2)  AS leite_in_natura_rs,
        ROUND(f.venda_leite_rs::numeric, 2)      AS venda_leite_rs,
        ROUND(f.receita_bruta::numeric, 2)       AS receita_bruta,
@@ -155,8 +235,11 @@ SELECT f.id_propriedade,
        ROUND(f.mao_obra_familiar::numeric, 2)   AS mao_obra_familiar,
        ROUND(f.despesa_aleitamento::numeric, 2) AS despesa_aleitamento,
        ROUND(f.despesa_total::numeric, 2)       AS despesa_total
-FROM fin f
-LEFT JOIN tec_mes t ON t.id_propriedade = f.id_propriedade AND t.mes = f.mes;
+FROM tmp_fin f
+LEFT JOIN tmp_tec t ON t.id_propriedade = f.id_propriedade AND t.mes = f.mes
+LEFT JOIN tmp_vis vm ON vm.id_propriedade = f.id_propriedade AND vm.mes = f.mes
+LEFT JOIN LATERAL (SELECT MAX(k.s) AS s FROM tmp_sup_ok k
+                   WHERE t.supervisor_raw LIKE '%&#65533;%' AND k.s LIKE replace(t.supervisor_raw, '&#65533;', '_')) sc ON TRUE;
 
 CREATE INDEX ON public.resumo_leite_mensal (id_propriedade);
 CREATE INDEX ON public.resumo_leite_mensal (tecnico);
@@ -166,9 +249,10 @@ CREATE INDEX ON public.resumo_leite_mensal (mes);
 DROP TABLE IF EXISTS public.resumo_despesa_subgrupo;
 CREATE TABLE public.resumo_despesa_subgrupo AS
 WITH base AS (
-  SELECT r.* FROM public.sisateg_receita_despesa r
+  SELECT r.* FROM tmp_base r
   WHERE r.atividade = 'BOVINOCULTURA DE LEITE' AND r.status_item = 'ATIVO' AND r.tipo_registro = 'PRINCIPAL'
-    AND r.dt_referencia BETWEEN DATE '2024-06-01' AND DATE '2026-12-31'
+    AND r.dt_referencia >= DATE '2024-06-01' AND r.dt_referencia < CURRENT_DATE + 1
+    AND NOT EXISTS (SELECT 1 FROM tmp_visitas_invalidas iv WHERE iv.id = r.id_visita::text)   -- fora as visitas excluídas (o SisATeG também não conta)
     AND r.grupo = 'Despesa'
     AND r.id_propriedade IN (SELECT id_propriedade FROM public.resumo_propriedades)
 ),
@@ -188,6 +272,48 @@ WHERE q.subgrupo NOT ILIKE 'Empr%' AND q.subgrupo NOT ILIKE 'Investimento%'
   AND q.item NOT ILIKE 'M_o de obra familiar'
 GROUP BY 1,2,3;
 CREATE INDEX ON public.resumo_despesa_subgrupo (id_propriedade, mes);
+
+-- ---------------------------------------------------------------------
+-- Receitas e despesas por TIPO (subgrupo) e classe (mesmo padrão do painel de ovinocaprinocultura): alimenta a aba "Receitas e despesas".
+--   classe: Receita bruta | Fora da receita bruta (empréstimo/investimento)
+--           Despesa direta | Outras despesas (formação de forrageiras, mão de obra familiar)
+--           Aleitamento (fora do total) | Fora das despesas (empréstimo/investimento)
+--   Os itens de "preço do leite" (subgrupo Venda de leite que não é leite in natura nem bonificação) não são receita: ficam de fora.
+--   Despesa direta e receita bruta daqui = as mesmas do resumo mensal (as regras são idênticas).
+DROP TABLE IF EXISTS public.resumo_tipo;
+CREATE TABLE public.resumo_tipo AS
+WITH base AS (
+  SELECT r.* FROM tmp_base r
+  WHERE r.atividade = 'BOVINOCULTURA DE LEITE' AND r.status_item = 'ATIVO' AND r.tipo_registro = 'PRINCIPAL'
+    AND r.dt_referencia >= DATE '2024-06-01' AND r.dt_referencia < CURRENT_DATE + 1
+    AND NOT EXISTS (SELECT 1 FROM tmp_visitas_invalidas iv WHERE iv.id = r.id_visita::text)   -- fora as visitas excluídas (o SisATeG também não conta)
+    AND r.grupo IN ('Receita','Despesa')
+    AND r.id_propriedade IN (SELECT id_propriedade FROM public.resumo_propriedades)
+),
+q AS (
+  SELECT id_propriedade, id_visita, id_item, dt_referencia, grupo, subgrupo, item, SUM(valor) AS qtd
+  FROM base WHERE tipo_valor = 'QUANTIDADE' GROUP BY 1,2,3,4,5,6,7
+),
+pr AS (
+  SELECT id_propriedade, id_visita, id_item, dt_referencia, AVG(valor) AS preco
+  FROM base WHERE tipo_valor = 'VALOR_UNITARIO' GROUP BY 1,2,3,4
+),
+v AS (
+  SELECT q.id_propriedade, to_char(date_trunc('month', q.dt_referencia), 'YYYY-MM') AS mes, q.grupo, q.subgrupo,
+         CASE WHEN q.grupo = 'Receita' AND (q.subgrupo ILIKE 'Empr%' OR q.subgrupo ILIKE 'Investimento%') THEN 'Fora da receita bruta'
+              WHEN q.grupo = 'Receita' THEN 'Receita bruta'
+              WHEN q.subgrupo ILIKE 'Empr%' OR q.subgrupo ILIKE 'Investimento%' THEN 'Fora das despesas'
+              WHEN q.subgrupo ILIKE 'Aleitamento%' THEN 'Aleitamento (fora do total)'
+              WHEN q.subgrupo ILIKE 'Despesas com Forma%' OR q.item ILIKE 'M_o de obra familiar' THEN 'Outras despesas'
+              ELSE 'Despesa direta' END AS classe,
+         q.qtd * pr.preco AS valor
+  FROM q JOIN pr USING (id_propriedade, id_visita, id_item, dt_referencia)
+  WHERE NOT (q.grupo = 'Receita' AND q.subgrupo = 'Venda de leite'
+             AND NOT (q.item ILIKE 'Venda de leite in natura%' OR q.item ILIKE 'Bonifica%' OR q.item ILIKE 'Divis%sobras%'))
+)
+SELECT id_propriedade, mes, grupo, classe, subgrupo, ROUND(SUM(valor)::numeric, 2) AS valor
+FROM v GROUP BY 1,2,3,4,5;
+CREATE INDEX ON public.resumo_tipo (id_propriedade, mes);
 
 ANALYZE public.resumo_propriedades;
 ANALYZE public.resumo_leite_mensal;

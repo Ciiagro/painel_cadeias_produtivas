@@ -4,3 +4,6 @@ __pycache__/
 .vercel/
 *.pyc
 bloco.txt
+
+*.bak_*
+*.bak

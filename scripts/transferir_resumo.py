@@ -36,29 +36,30 @@ def eng(prefixo, padrao_host=None, padrao_porta="5432"):
     return create_engine(url)
 
 
-def copiar(origem, destino, tabela, indices):
+def copiar(origem, con, tabela, indices):
     df = pd.read_sql(f"SELECT * FROM {ESQUEMA}.{tabela}", origem)
     print(f"{tabela}: lidas {len(df)} linhas do banco local.")
     if df.empty:
         sys.exit(f"{tabela} vazia no local: nada foi copiado.")
     tmp = f"{tabela}_novo"
-    with destino.begin() as con:  # tudo ou nada
-        df.to_sql(tmp, con, schema=ESQUEMA, if_exists="replace", index=False, chunksize=2000, method="multi")
-        con.execute(text(f'DROP TABLE IF EXISTS "{ESQUEMA}"."{tabela}" CASCADE'))
-        con.execute(text(f'ALTER TABLE "{ESQUEMA}"."{tmp}" RENAME TO "{tabela}"'))
-        for col in indices:
-            con.execute(text(f'CREATE INDEX ON "{ESQUEMA}"."{tabela}" ({col})'))
+    df.to_sql(tmp, con, schema=ESQUEMA, if_exists="replace", index=False, chunksize=2000, method="multi")
+    con.execute(text(f'DROP TABLE IF EXISTS "{ESQUEMA}"."{tabela}" CASCADE'))
+    con.execute(text(f'ALTER TABLE "{ESQUEMA}"."{tmp}" RENAME TO "{tabela}"'))
+    for col in indices:
+        con.execute(text(f'CREATE INDEX ON "{ESQUEMA}"."{tabela}" ({col})'))
 
 
 def main():
     origem = eng("LOCAL", padrao_host="localhost")
     destino = eng("REMOTE")
-    copiar(origem, destino, "resumo_propriedades", ["id_propriedade", "tecnico"])
-    copiar(origem, destino, "resumo_leite_mensal", ["id_propriedade", "mes"])
-    copiar(origem, destino, "resumo_despesa_subgrupo", ["id_propriedade", "mes"])
-    # recria as views (o DROP CASCADE acima apaga as antigas)
     sql = (Path(__file__).resolve().parent.parent / "sql" / "vw_resumo_leite_mensal.sql").read_text(encoding="utf-8")
+    # TUDO numa única transação: tabelas novas + views. Se qualquer parte falhar, o servidor fica exatamente como estava
+    # (antes as views eram recriadas depois, e uma falha deixava o painel sem views).
     with destino.begin() as con:
+        copiar(origem, con, "resumo_propriedades", ["id_propriedade", "tecnico"])
+        copiar(origem, con, "resumo_leite_mensal", ["id_propriedade", "mes"])
+        copiar(origem, con, "resumo_despesa_subgrupo", ["id_propriedade", "mes"])
+        copiar(origem, con, "resumo_tipo", ["id_propriedade", "mes"])
         con.exec_driver_sql(sql.replace("%", "%%"))
     print("Copia concluida e views recriadas no servidor.")
 

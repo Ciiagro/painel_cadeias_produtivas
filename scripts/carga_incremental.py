@@ -48,6 +48,7 @@ def main():
     ap.add_argument("tabela")
     ap.add_argument("--dias", type=int, default=120, help="janela móvel em dias (padrão 120)")
     ap.add_argument("--desde", help="YYYY-MM-DD: sobrescreve a janela")
+    ap.add_argument("--forcar", action="store_true", help="ignora a trava (API devolveu menos de 50%% do que já há na janela)")
     a = ap.parse_args()
     if not a.tabela.replace("_", "").isalnum():
         sys.exit("nome de tabela inválido")
@@ -59,18 +60,47 @@ def main():
     print(f"Tabela {a.tabela}: recarregando {COLUNA_DATA} de {ini} até {fim}")
 
     pg = engine_local()
-    odbc = pyodbc.connect(f"DSN={os.environ.get('ODBC_DSN', 'SISATEG')}", autocommit=True)
 
-    # 1) lê TUDO da janela para uma tabela temporária (a final ainda não é tocada)
+    def abre():
+        return pyodbc.connect(f"DSN={os.environ.get('ODBC_DSN', 'SISATEG')}", autocommit=True)
+
+    # 1) lê a janela MÊS A MÊS para uma tabela temporária (a final ainda não é tocada).
+    #    Uma consulta única muito grande derruba o driver ODBC; por mês é estável, e cada mês tem até 3 tentativas.
     with pg.begin() as con:
         con.execute(text(f'DROP TABLE IF EXISTS "{tmp}"'))
     total = 0
-    q = f"SELECT * FROM {a.tabela} WHERE {COLUNA_DATA} >= '{ini}' AND {COLUNA_DATA} < '{fim}'"
-    for i, chunk in enumerate(pd.read_sql(q, odbc, chunksize=CHUNK), 1):
-        chunk.to_sql(tmp, pg, if_exists="append", index=False, method="multi", chunksize=1000)
-        total += len(chunk)
-        print(f"  bloco {i}: {total} linhas lidas")
-    odbc.close()
+    d, fim_d = date.fromisoformat(ini), date.fromisoformat(fim)
+    meses = []
+    while d < fim_d:
+        nxt = (d.replace(day=28) + timedelta(days=4)).replace(day=1)
+        meses.append((d, min(nxt, fim_d)))
+        d = nxt
+    for a0, a1 in meses:
+        pedacos = None
+        for tent in range(1, 4):
+            odbc = None
+            try:
+                odbc = abre()
+                q = f"SELECT * FROM {a.tabela} WHERE {COLUNA_DATA} >= '{a0}' AND {COLUNA_DATA} < '{a1}'"
+                pedacos = list(pd.read_sql(q, odbc, chunksize=CHUNK))
+                break
+            except Exception as e:
+                print(f"  {a0:%Y-%m}: falha na tentativa {tent}/3: {str(e)[:140]}", flush=True)
+                if tent == 3:
+                    raise
+                time.sleep(5)
+            finally:
+                try:
+                    if odbc is not None:
+                        odbc.close()
+                except Exception:
+                    pass
+        n = 0
+        for chunk in pedacos:
+            chunk.to_sql(tmp, pg, if_exists="append", index=False, method="multi", chunksize=1000)
+            n += len(chunk)
+        total += n
+        print(f"  {a0:%Y-%m}: {n} linhas (total {total})", flush=True)
     if total == 0:
         with pg.begin() as con:
             con.execute(text(f'DROP TABLE IF EXISTS "{tmp}"'))
@@ -81,6 +111,11 @@ def main():
     with pg.begin() as con:
         existe = con.execute(text("SELECT to_regclass(:t)"), {"t": f"public.{a.tabela}"}).scalar()
         if existe:
+            antes = con.execute(text(f'SELECT COUNT(*) FROM "{a.tabela}" WHERE {COLUNA_DATA} >= :i'), {"i": ini}).scalar()
+            if antes and total < 0.5 * antes and not a.forcar:
+                con.execute(text(f'DROP TABLE IF EXISTS "{tmp}"'))
+                sys.exit(f"TRAVA: a API devolveu {total} linhas e o banco tem {antes} na janela. Nada foi trocado "
+                         f"(confira a conexão/ODBC; se for mesmo isso, rode com --forcar).")
             apagadas = con.execute(text(f'DELETE FROM "{a.tabela}" WHERE {COLUNA_DATA} >= :i'), {"i": ini}).rowcount
             con.execute(text(f'INSERT INTO "{a.tabela}" ({cols}) SELECT {cols} FROM "{tmp}"'))
             con.execute(text(f'DROP TABLE "{tmp}"'))

@@ -47,9 +47,10 @@ def index(request: Request):
     return templates.TemplateResponse(request, "index.html")
 
 
-def _where(supervisor=None, tecnico=None, projeto=None, propriedade=None, situacao=None, municipio=None):
+def _where(supervisor=None, tecnico=None, projeto=None, propriedade=None, situacao=None, municipio=None, regiao=None):
     """Monta WHERE + parâmetros para os filtros (mesmas colunas nas duas views)."""
-    w, p = ["1=1"], {}
+    # Regra fixa: o projeto TREINAMENTO SP nunca aparece (filtros, gráficos, destaques, causas, tabelas, Excel)
+    w, p = ["COALESCE(projeto, '') NOT ILIKE 'TREINAMENTO%'"], {}
     if supervisor:
         w.append("supervisor = :s"); p["s"] = supervisor
     if tecnico:
@@ -60,6 +61,8 @@ def _where(supervisor=None, tecnico=None, projeto=None, propriedade=None, situac
         w.append("id_propriedade = :pr"); p["pr"] = propriedade
     if municipio:
         w.append("municipio = :mu"); p["mu"] = municipio
+    if regiao:
+        w.append("regiao = :rg"); p["rg"] = regiao
     if situacao == "ativa":
         w.append("ativa")
     elif situacao == "inativa":
@@ -69,23 +72,29 @@ def _where(supervisor=None, tecnico=None, projeto=None, propriedade=None, situac
 
 @app.get("/api/filtros")
 def filtros(supervisor: str | None = None, tecnico: str | None = None, projeto: str | None = None,
-            municipio: str | None = None, situacao: str | None = None):
-    """Listas dos filtros. Cada lista respeita TODOS os outros filtros já escolhidos (filtros em cascata)."""
-    escolhidos = {"supervisor": supervisor, "tecnico": tecnico, "projeto": projeto, "municipio": municipio}
+            municipio: str | None = None, situacao: str | None = None, regiao: str | None = None,
+            propriedade: str | None = None, de: str | None = None, ate: str | None = None):
+    """Listas dos filtros. Cada lista respeita TODOS os outros filtros já escolhidos (filtros em cascata) e o período De/Até."""
+    propriedade = int(propriedade) if propriedade and propriedade.isdigit() else None  # vazio = sem filtro
+    escolhidos = {"supervisor": supervisor, "tecnico": tecnico, "projeto": projeto, "municipio": municipio, "regiao": regiao, "propriedade": propriedade}
+    per_w, per_p = [], {}
+    if de: per_w.append("mes >= :pde"); per_p["pde"] = de
+    if ate: per_w.append("mes <= :pate"); per_p["pate"] = ate
     with engine.connect() as con:
         def lista(coluna):
             outros = {k: v for k, v in escolhidos.items() if k != coluna}
             w, p = _where(situacao=situacao, **outros)
-            w.append(f"{coluna} IS NOT NULL")
+            w.append(f"{coluna} IS NOT NULL"); w.extend(per_w); p.update(per_p)
             return [r[0] for r in con.execute(text(
                 f"SELECT DISTINCT {coluna} FROM {TABLE} WHERE {' AND '.join(w)} ORDER BY 1"), p)]
-        projetos, sups, tecs, muns = lista("projeto"), lista("supervisor"), lista("tecnico"), lista("municipio")
-        w2, p2 = _where(supervisor, tecnico, projeto, None, situacao, municipio)
+        projetos, sups, tecs, muns, regs = lista("projeto"), lista("supervisor"), lista("tecnico"), lista("municipio"), lista("regiao")
+        w2, p2 = _where(supervisor, tecnico, projeto, None, situacao, municipio, regiao)
+        w2 = w2 + per_w; p2 = {**p2, **per_p}
         props = [{"id": r[0], "nome": r[1]} for r in con.execute(text(
             f"SELECT DISTINCT id_propriedade, COALESCE(propriedade, 'Propriedade ' || id_propriedade) "
             f"FROM {TABLE} WHERE {' AND '.join(w2)} ORDER BY 2"), p2)]
         meses = [r[0] for r in con.execute(text(f"SELECT DISTINCT mes FROM {TABLE} WHERE mes >= :mi ORDER BY 1"), {"mi": MES_INICIO})]
-    return {"projetos": projetos, "supervisores": sups, "tecnicos": tecs, "municipios": muns, "propriedades": props, "meses": meses}
+    return {"projetos": projetos, "supervisores": sups, "tecnicos": tecs, "municipios": muns, "regioes": regs, "propriedades": props, "meses": meses}
 
 
 @app.get("/api/propriedade/{id_propriedade}")
@@ -111,9 +120,9 @@ def propriedade(id_propriedade: int):
 
 @app.get("/api/serie")
 def serie(supervisor: str | None = None, tecnico: str | None = None, propriedade: int | None = None,
-          projeto: str | None = None, situacao: str | None = None, municipio: str | None = None,
+          projeto: str | None = None, situacao: str | None = None, municipio: str | None = None, regiao: str | None = None,
           de: str | None = Query(None, description="YYYY-MM"), ate: str | None = Query(None, description="YYYY-MM")):
-    where, p = _where(supervisor, tecnico, projeto, propriedade, situacao, municipio)
+    where, p = _where(supervisor, tecnico, projeto, propriedade, situacao, municipio, regiao)
     p["de"] = max(de or MES_INICIO, MES_INICIO)
     where.append("mes >= :de")
     if ate:
@@ -130,7 +139,7 @@ def serie(supervisor: str | None = None, tecnico: str | None = None, propriedade
                COUNT(DISTINCT produtor)                 AS produtores
         FROM {TABLE} WHERE {' AND '.join(where)}
         GROUP BY mes ORDER BY mes"""
-    wp, pp = _where(supervisor, tecnico, projeto, propriedade, None, municipio)
+    wp, pp = _where(supervisor, tecnico, projeto, propriedade, None, municipio, regiao)
     # o card conta as propriedades ativas hoje; no filtro 'Inativas' conta as inativas
     wp.append("NOT ativa" if situacao == "inativa" else "ativa")
     with engine.connect() as con:
@@ -166,13 +175,13 @@ def serie(supervisor: str | None = None, tecnico: str | None = None, propriedade
 
 @app.get("/api/destaques")
 def destaques(supervisor: str | None = None, tecnico: str | None = None, propriedade: int | None = None,
-              projeto: str | None = None, situacao: str | None = None, municipio: str | None = None,
+              projeto: str | None = None, situacao: str | None = None, municipio: str | None = None, regiao: str | None = None,
               ate: str | None = Query(None, description="YYYY-MM"),
               de: str | None = Query(None, description="YYYY-MM")):
     """Destaques automáticos do mês de referência (por regras, sem IA): comparam o mês com o anterior,
     dentro dos filtros escolhidos. Se o último mês ainda está em andamento, usa o mês anterior (fechado)."""
     from datetime import date
-    where, p = _where(supervisor, tecnico, projeto, propriedade, situacao, municipio)
+    where, p = _where(supervisor, tecnico, projeto, propriedade, situacao, municipio, regiao)
     wsql = " AND ".join(where)
     sub = {"mi": MES_INICIO}
     sql_m = f"SELECT DISTINCT mes FROM {TABLE} WHERE mes >= :mi "
@@ -280,12 +289,12 @@ DESP = os.environ.get("DESP_NAME", "public.vw_despesa_subgrupo")
 
 @app.get("/api/causas")
 def causas(supervisor: str | None = None, tecnico: str | None = None, propriedade: int | None = None,
-           projeto: str | None = None, situacao: str | None = None, municipio: str | None = None,
+           projeto: str | None = None, situacao: str | None = None, municipio: str | None = None, regiao: str | None = None,
            de: str | None = Query(None, description="YYYY-MM"), ate: str | None = Query(None, description="YYYY-MM")):
     """Aba 'Causas' (por regras, sem IA): quando as propriedades entraram/saíram, preço do leite fora do normal
     e despesa direta por subgrupo. Tudo dentro dos filtros escolhidos."""
     from datetime import date
-    where, p = _where(supervisor, tecnico, projeto, propriedade, situacao, municipio)
+    where, p = _where(supervisor, tecnico, projeto, propriedade, situacao, municipio, regiao)
     wsql = " AND ".join(where)
     pp = {**p, "mi": MES_INICIO}
     cate = ""
@@ -390,6 +399,185 @@ def causas(supervisor: str | None = None, tecnico: str | None = None, propriedad
     return {"mes": m, "anterior": a, "de": de_, "movimento": mov, "preco": preco,
             "despesa": {"total": tot_geral if desp else 0, "itens": desp}}
 
+
+
+TIPO = os.environ.get("TIPO_NAME", "public.vw_tipo")
+
+
+@app.get("/api/tipos")
+def tipos(supervisor: str | None = None, tecnico: str | None = None, propriedade: int | None = None,
+          projeto: str | None = None, situacao: str | None = None, municipio: str | None = None, regiao: str | None = None,
+          de: str | None = Query(None, description="YYYY-MM"), ate: str | None = Query(None, description="YYYY-MM")):
+    """Aba 'Receitas e despesas': receita bruta, despesa direta e despesa total, abertas por tipo (subgrupo), no período e filtros."""
+    where, p = _where(supervisor, tecnico, projeto, propriedade, situacao, municipio, regiao)
+    wsql = " AND ".join(where)
+    pp = {**p, "de": max(de or MES_INICIO, MES_INICIO)}
+    cate = ""
+    if ate:
+        cate = " AND mes <= :ate"; pp["ate"] = ate
+    try:
+        with engine.connect() as con:
+            rows = con.execute(text(f"""SELECT grupo, classe, subgrupo, SUM(valor) AS valor
+                     FROM {TIPO} WHERE {wsql} AND mes >= :de{cate} GROUP BY grupo, classe, subgrupo"""), pp).mappings().all()
+            ms = con.execute(text(f"""SELECT MIN(mes) AS a, MAX(mes) AS b FROM {TIPO} WHERE {wsql} AND mes >= :de{cate}"""), pp).mappings().first()
+    except Exception as e:   # mostra o motivo na tela (ex.: view vw_tipo ainda não criada no servidor)
+        return {"erro": str(e).splitlines()[0][:300]}
+    def lista(classe):
+        l = [{"nome": r["subgrupo"], "valor": float(r["valor"] or 0)} for r in rows if r["classe"] == classe and float(r["valor"] or 0) != 0]
+        l.sort(key=lambda x: -abs(x["valor"]))
+        tot = sum(x["valor"] for x in l)
+        for x in l:
+            x["pct"] = (x["valor"] / tot * 100) if tot else 0
+        return {"total": tot, "itens": l}
+    rb, rf = lista("Receita bruta"), lista("Fora da receita bruta")
+    dd, od, df = lista("Despesa direta"), lista("Outras despesas"), lista("Fora das despesas")
+    da = lista("Aleitamento (fora do total)")
+    desp_total = dd["total"] + od["total"] + df["total"]   # total geral : inclui investimento e pagamento de empréstimo
+    rec_total = rb["total"] + rf["total"]                   # total geral de receitas (inclui venda de bem e recebimento de empréstimo)
+    return {"de": ms["a"] if ms else None, "ate": ms["b"] if ms else None,
+            "receita_bruta": rb, "receita_fora": rf, "despesa_direta": dd, "despesa_outras": od, "despesa_fora": df, "despesa_aleitamento": da,
+            "despesa_total": desp_total, "receita_total": rec_total, "margem_bruta": rb["total"] - dd["total"]}
+
+
+
+# ----------------------------------------------------------------------------------------------------------------
+# VISÃO MACRO: todas as propriedades, visitas, receita e produção, comparando regiões (ou municípios de uma região) no tempo.
+# Cadeias: leite (vw_resumo_leite_mensal), ovino de corte (vw_ovino_mensal) ou as duas somadas (só receita).
+# Lê só views do servidor público. O que não existir (ex.: views do ovino ainda sem região) vira aviso, não erro.
+# ----------------------------------------------------------------------------------------------------------------
+OVINO_M = os.environ.get("OVINO_MENSAL_NAME", "public.vw_ovino_mensal")
+OVINO_P = os.environ.get("OVINO_PROPS_NAME", "public.vw_ovino_propriedades")
+
+
+def _norm(t):
+    import unicodedata
+    t = unicodedata.normalize("NFD", t or "")
+    return " ".join("".join(c for c in t if unicodedata.category(c) != "Mn").upper().split())
+
+
+@app.get("/api/macro")
+def macro(cadeia: str = "leite", regiao: str | None = None, situacao: str | None = None, nivel: str | None = None,
+          ate: str | None = Query(None, description="YYYY-MM")):
+    """Séries mensais por região (ou por município, se uma região foi escolhida): propriedades, visitas, receita e produção."""
+    cadeia = cadeia if cadeia in ("leite", "ovino", "todas") else "leite"
+    por_mun = bool(regiao) or nivel == "municipio"
+    gcol = "municipio" if por_mun else "regiao"
+    avisos, grupos, nomes = [], {}, {}
+    meses_set = set()
+
+    def g(chave, nome, mes):
+        k = _norm(nome) if nome else "SEM REGIAO"
+        nomes.setdefault(k, nome or "Sem região")
+        return grupos.setdefault(k, {"cad": 0, "rec": {}, "prod": {}, "props": {}, "vis": {}, "assist": {}, "pp": {}})
+
+    where, p = _where(None, None, None, None, situacao, None, regiao)
+    wsql = " AND ".join(where)
+    pp = {**p, "mi": MES_INICIO}
+    cate = ""
+    if ate:
+        cate = " AND mes <= :ate"; pp["ate"] = ate
+    fontes = []
+    if cadeia in ("leite", "todas"):
+        fontes.append(("leite", TABLE, PROPS, "producao_leite_l"))
+    if cadeia in ("ovino", "todas"):
+        fontes.append(("ovino", OVINO_M, OVINO_P, "animais_vendidos"))
+    with engine.connect() as con:
+        for nome_c, tab, ptab, colprod in fontes:
+            try:
+                for r in con.execute(text(f"""SELECT mes, {gcol} AS grupo, id_propriedade, SUM(receita_bruta) AS rec, SUM({colprod}) AS prod
+                         FROM {tab} WHERE {wsql} AND mes >= :mi{cate} GROUP BY 1, 2, 3"""), pp).mappings():
+                    x = g(None, r["grupo"], r["mes"]); m = r["mes"]; meses_set.add(m)
+                    rec, prod = float(r["rec"] or 0), float(r["prod"] or 0)
+                    x["rec"][m] = x["rec"].get(m, 0) + rec
+                    x["prod"][m] = x["prod"].get(m, 0) + prod
+                    x["props"][m] = x["props"].get(m, 0) + 1
+                    x["pp"].setdefault((nome_c, r["id_propriedade"]), {})[m] = (rec, prod)
+                for r in con.execute(text(f"""SELECT {gcol} AS grupo, COUNT(DISTINCT id_propriedade) AS n
+                         FROM {ptab} WHERE {wsql} GROUP BY 1"""), pp).mappings():
+                    g(None, r["grupo"], None)["cad"] += int(r["n"] or 0)
+            except Exception as e:
+                con.rollback()
+                avisos.append(f"{nome_c}: não consegui ler ({str(e).splitlines()[0][:120]}). Rode a atualização desse painel.")
+        # Visitas e propriedades assistidas (na cadeia leite: só propriedades de leite)
+        try:
+            vt = "public.mv_visitas" if con.execute(text("SELECT to_regclass('public.mv_visitas') IS NOT NULL")).scalar() else "public.vw_visitas"
+            vw = ["COALESCE(projeto, '') NOT ILIKE 'TREINAMENTO%'", "mes >= :mi"]; vp = {"mi": MES_INICIO}
+            if cadeia == "leite":   # painel da bovinocultura de leite: só visitas às propriedades com lançamento de leite
+                vw.append("id_propriedade::text IN (SELECT id_propriedade::text FROM public.vw_resumo_leite_mensal WHERE COALESCE(receita_bruta,0) > 0 OR COALESCE(producao_leite_l,0) > 0)")
+            if ate:
+                vw.append("mes <= :ate"); vp["ate"] = ate
+            if regiao:
+                vw.append("regiao_faec = :rg"); vp["rg"] = regiao
+            vg = "municipio" if por_mun else "regiao_faec"
+            for r in con.execute(text(f"""SELECT mes, {vg} AS grupo, COUNT(DISTINCT id_visita) AS vis, COUNT(DISTINCT id_propriedade) AS assist
+                     FROM {vt} WHERE {' AND '.join(vw)} GROUP BY 1, 2"""), vp).mappings():
+                x = g(None, r["grupo"], r["mes"]); m = r["mes"]; meses_set.add(m)
+                x["vis"][m] = int(r["vis"] or 0); x["assist"][m] = int(r["assist"] or 0)
+        except Exception as e:
+            con.rollback()
+            avisos.append(f"visitas: não consegui ler ({str(e).splitlines()[0][:120]})")
+    meses = sorted(meses_set)
+    out = []
+    for k, x in grupos.items():
+        if not x["cad"] and not any(x["rec"].values()) and not any(x["prod"].values()):
+            continue   # só visitas de outra atividade: fora do painel desta cadeia
+        # "Mesmas propriedades": o mês só é comparado com as propriedades que tiveram valor (>0) nos DOIS meses comparados
+        lfl = {}
+        for fi, f in ((0, "rec"), (1, "prod")):
+            lfl[f] = {}
+            for off in (1, 12):
+                cur, base = [], []
+                for i in range(len(meses)):
+                    c = b = 0.0
+                    if i >= off:
+                        for vals in x["pp"].values():
+                            a_, b_ = vals.get(meses[i]), vals.get(meses[i - off])
+                            if a_ and b_ and a_[fi] > 0 and b_[fi] > 0:
+                                c += a_[fi]; b += b_[fi]
+                    cur.append(round(c, 2)); base.append(round(b, 2))
+                lfl[f][str(off)] = {"cur": cur, "base": base}
+        out.append({"nome": nomes[k], "cadastro": x["cad"], "lfl": lfl,
+                    **{f: [x[f].get(m) for m in meses] for f in ("rec", "prod", "props", "vis", "assist")}})
+    out.sort(key=lambda z: -sum(v or 0 for v in z["rec"]))
+    unidade = {"leite": "L", "ovino": "animais vendidos", "todas": None}[cadeia]
+    return {"nivel": "município" if por_mun else "região", "cadeia": cadeia, "unidade": unidade,
+            "meses": meses, "grupos": out, "avisos": avisos}
+
+
+@app.get("/api/conferencia")
+def conferencia(mes: str = Query(..., description="YYYY-MM")):
+    """Aba 'Conferência': receita bruta, despesa direta e produção do painel, por propriedade e visita, em um mês (para comparar com a planilha do SisATeG)."""
+    def ler(com_visita):
+        vis = "MAX(id_visita) AS id_visita," if com_visita else "NULL AS id_visita,"
+        with engine.connect() as con:
+            return con.execute(text(f"""SELECT id_propriedade::text AS id, {vis} MAX(propriedade) AS propriedade, MAX(municipio) AS municipio, MAX(projeto) AS projeto, BOOL_OR(COALESCE(ativa, FALSE)) AS ativa,
+                       SUM(receita_bruta) AS rec, SUM(despesa_direta) AS desp, SUM(producao_leite_l) AS prod
+                     FROM {TABLE} WHERE mes = :m AND COALESCE(projeto, '') NOT ILIKE 'TREINAMENTO%'
+                     GROUP BY id_propriedade"""), {"m": mes}).mappings().all()
+    treino = []
+    try:   # propriedades de projetos de TREINAMENTO: não entram no painel, então a conferência também as ignora
+        with engine.connect() as con:
+            treino = [r[0] for r in con.execute(text(f"SELECT DISTINCT id_propriedade::text FROM {PROPS} WHERE COALESCE(projeto, '') ILIKE 'TREINAMENTO%'"))]
+    except Exception:
+        treino = []
+    com_visita = True
+    fora = {}
+    try:   # receita que o SisATeG soma em "Receitas" mas fica fora da receita bruta do painel (venda de bem e recebimento de empréstimo)
+        with engine.connect() as con:
+            fora = {r["id"]: float(r["v"] or 0) for r in con.execute(text(f"""SELECT id_propriedade::text AS id, SUM(valor) AS v FROM {TIPO}
+                      WHERE mes = :m AND classe = 'Fora da receita bruta' AND COALESCE(projeto, '') NOT ILIKE 'TREINAMENTO%' GROUP BY 1"""), {"m": mes}).mappings()}
+    except Exception:
+        fora = {}
+    try:
+        rows = ler(True)
+    except Exception:
+        try:
+            rows = ler(False); com_visita = False   # servidor ainda sem a coluna id_visita (rode o atualizar_leite.bat)
+        except Exception as e:
+            return {"erro": str(e).splitlines()[0][:300]}
+    return {"mes": mes, "com_visita": com_visita, "treino": treino,
+            "itens": [{"id": r["id"], "id_visita": r["id_visita"], "propriedade": r["propriedade"], "municipio": r["municipio"], "projeto": r["projeto"], "ativa": bool(r["ativa"]), "rec_fora": fora.get(r["id"], 0.0),
+                       "rec": float(r["rec"] or 0), "desp": float(r["desp"] or 0), "prod": float(r["prod"] or 0)} for r in rows]}
 
 
 @app.get("/health")
