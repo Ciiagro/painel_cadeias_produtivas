@@ -5,6 +5,7 @@
 CREATE TABLE IF NOT EXISTS public.municipio_regiao (
   cod_ibge text, nome text, nome_norm text, regiao_faec text, regiao_sebrae text, regiao_planejamento text, sindicato text);
 
+DROP VIEW IF EXISTS public.vw_leite_revisar;
 DROP VIEW IF EXISTS public.vw_tipo;
 DROP VIEW IF EXISTS public.vw_despesa_subgrupo;
 DROP VIEW IF EXISTS public.vw_resumo_leite_mensal;
@@ -49,10 +50,21 @@ SELECT w.id_propriedade, w.propriedade, w.tecnico, w.supervisor, w.projeto, w.mu
 FROM public.vw_resumo_leite_mensal w
 JOIN public.resumo_tipo d ON d.id_propriedade = w.id_propriedade AND d.mes = w.mes;
 
+-- Visitas para revisar (aba "Revisar lançamentos"): mesmas colunas de filtro da vw_resumo_leite_mensal.
+CREATE VIEW public.vw_leite_revisar AS
+SELECT r.id_visita, r.id_propriedade, COALESCE(v.propriedade, r.propriedade_visita) AS propriedade,
+       COALESCE(r.tecnico, v.tecnico) AS tecnico,
+       COALESCE(k3.ultimo_supervisor, v.supervisor, r.supervisor_visita) AS supervisor,
+       COALESCE(v.municipio, r.municipio_visita) AS municipio, v.regiao, v.projeto, COALESCE(v.ativa, FALSE) AS ativa,
+       r.mes_visita, r.mes_lanc_de, r.mes_lanc_ate, r.mes_painel
+FROM public.resumo_leite_revisar r
+LEFT JOIN public.vw_propriedades v ON v.id_propriedade::text = r.id_propriedade::text
+LEFT JOIN (SELECT DISTINCT ON (btrim(tecnico_responsavel, E' \t\r\n')) btrim(tecnico_responsavel, E' \t\r\n') AS tec, ultimo_supervisor FROM public.ranking_tecnicos ORDER BY btrim(tecnico_responsavel, E' \t\r\n'), total_de_visitas DESC NULLS LAST) k3 ON k3.tec = COALESCE(r.tecnico, v.tecnico);
+
 -- Mantém a permissão do usuário só de leitura (se ele já existir) depois que as views são recriadas.
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'painel_leitura') THEN
-    GRANT SELECT ON public.vw_propriedades, public.vw_resumo_leite_mensal, public.vw_despesa_subgrupo, public.vw_tipo TO painel_leitura;
+    GRANT SELECT ON public.vw_propriedades, public.vw_resumo_leite_mensal, public.vw_despesa_subgrupo, public.vw_tipo, public.vw_leite_revisar TO painel_leitura;
   END IF;
 END $$;

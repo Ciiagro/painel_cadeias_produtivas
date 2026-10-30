@@ -616,6 +616,31 @@ def conferencia(mes: str = Query(..., description="YYYY-MM")):
                        "rec": float(r["rec"] or 0), "desp": float(r["desp"] or 0), "prod": float(r["prod"] or 0)} for r in rows]}
 
 
+REVISAR = os.environ.get("REVISAR_NAME", "public.vw_leite_revisar")
+
+
+@app.get("/api/revisar")
+def revisar(supervisor: str | None = None, tecnico: str | None = None, propriedade: int | None = None,
+            projeto: str | None = None, situacao: str | None = None, municipio: str | None = None, regiao: str | None = None,
+            de: str | None = Query(None, description="YYYY-MM"), ate: str | None = Query(None, description="YYYY-MM")):
+    """Aba 'Revisar lançamentos': visitas cuja referência cadastrada é de um mês e os lançamentos são de outro (a visita aparece em meses diferentes no painel e na planilha)."""
+    where, p = _where(supervisor, tecnico, projeto, propriedade, situacao, municipio, regiao)
+    p["de"] = max(de or MES_INICIO, MES_INICIO)
+    per_l, per_p = ["mes_lanc_de >= :de"], ["mes_painel >= :de"]
+    if ate:
+        per_l.append("mes_lanc_de <= :ate"); per_p.append("mes_painel <= :ate"); p["ate"] = ate
+    where.append("((" + " AND ".join(per_l) + ") OR (" + " AND ".join(per_p) + "))")
+    sql = f"""SELECT id_visita, id_propriedade, propriedade, municipio, tecnico, supervisor, projeto, mes_visita, mes_lanc_de, mes_lanc_ate, mes_painel
+              FROM {REVISAR} WHERE {' AND '.join(where)}
+              ORDER BY supervisor NULLS LAST, tecnico NULLS LAST, mes_lanc_de DESC, id_propriedade"""
+    try:
+        with engine.connect() as con:
+            rows = [dict(r._mapping) for r in con.execute(text(sql), p)]
+    except Exception:   # a view ainda não existe no servidor (falta rodar a atualização): aviso, não erro
+        return {"itens": [], "aviso": "Esta lista ainda não existe no servidor. Rode a atualização do painel (atualizar_leite.bat) para criá-la."}
+    return {"itens": rows}
+
+
 @app.get("/api/visitas_painel")
 def visitas_painel(ids: str = Query(..., description="ids de visita separados por vírgula")):
     """Conferência: em que mês(es) o painel tem cada visita (para explicar visita que está na planilha e não aparece no mês)."""

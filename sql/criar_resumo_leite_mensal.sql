@@ -315,6 +315,30 @@ SELECT id_propriedade, mes, grupo, classe, subgrupo, ROUND(SUM(valor)::numeric, 
 FROM v GROUP BY 1,2,3,4,5;
 CREATE INDEX ON public.resumo_tipo (id_propriedade, mes);
 
+-- ---------------------------------------------------------------------
+-- Visitas para REVISAR: a referência cadastrada na visita (mês) é diferente do mês dos lançamentos.
+-- O SisATeG/planilha conta o mês dos lançamentos; o painel usa a referência da visita (se estiver a até 1 ano de distância).
+-- Assim a visita aparece em meses diferentes na planilha e no painel. A correção é no SisATeG (técnico).
+DROP TABLE IF EXISTS public.resumo_leite_revisar;
+CREATE TABLE public.resumo_leite_revisar AS
+SELECT r.id_visita::text AS id_visita, r.id_propriedade,
+       MAX(lv.imovel) AS propriedade_visita, MAX(lv.municipio_propriedade) AS municipio_visita,
+       MAX(NULLIF(lv.tecnico_atual, '')) AS tecnico, replace(MAX(NULLIF(lv.supervisor_atual, '')), '&#65533;', '') AS supervisor_visita,
+       lv.referencia_visita AS mes_visita,
+       to_char(MIN(r.dt_referencia), 'YYYY-MM') AS mes_lanc_de, to_char(MAX(r.dt_referencia), 'YYYY-MM') AS mes_lanc_ate,
+       CASE WHEN ABS(to_date(lv.referencia_visita || '-01', 'YYYY-MM-DD') - MIN(r.dt_referencia)::date) <= 366
+            THEN lv.referencia_visita ELSE to_char(MIN(r.dt_referencia), 'YYYY-MM') END AS mes_painel
+FROM public.sisateg_receita_despesa r
+JOIN public.sisateg_rel_listar_visita lv ON lv.id_visita::text = r.id_visita::text
+WHERE r.atividade = 'BOVINOCULTURA DE LEITE' AND r.status_item = 'ATIVO' AND r.tipo_registro = 'PRINCIPAL'
+  AND r.dt_referencia >= DATE '2024-06-01' AND r.dt_referencia < CURRENT_DATE + 1
+  AND lv.dt_exclusao_visita IS NULL
+  AND lv.referencia_visita ~ '^[0-9]{4}-[0-9]{2}$'
+  AND to_char(r.dt_referencia, 'YYYY-MM') <> lv.referencia_visita
+  AND r.id_propriedade IN (SELECT id_propriedade FROM public.resumo_propriedades)
+GROUP BY r.id_visita::text, r.id_propriedade, lv.referencia_visita;
+CREATE INDEX ON public.resumo_leite_revisar (id_propriedade);
+
 ANALYZE public.resumo_propriedades;
 ANALYZE public.resumo_leite_mensal;
 

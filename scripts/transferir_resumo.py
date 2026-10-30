@@ -36,10 +36,10 @@ def eng(prefixo, padrao_host=None, padrao_porta="5432"):
     return create_engine(url)
 
 
-def copiar(origem, con, tabela, indices):
+def copiar(origem, con, tabela, indices, permite_vazia=False):
     df = pd.read_sql(f"SELECT * FROM {ESQUEMA}.{tabela}", origem)
     print(f"{tabela}: lidas {len(df)} linhas do banco local.")
-    if df.empty:
+    if df.empty and not permite_vazia:
         sys.exit(f"{tabela} vazia no local: nada foi copiado.")
     tmp = f"{tabela}_novo"
     df.to_sql(tmp, con, schema=ESQUEMA, if_exists="replace", index=False, chunksize=2000, method="multi")
@@ -60,6 +60,7 @@ def main():
         copiar(origem, con, "resumo_leite_mensal", ["id_propriedade", "mes"])
         copiar(origem, con, "resumo_despesa_subgrupo", ["id_propriedade", "mes"])
         copiar(origem, con, "resumo_tipo", ["id_propriedade", "mes"])
+        copiar(origem, con, "resumo_leite_revisar", ["id_propriedade"], permite_vazia=True)
         con.exec_driver_sql(sql.replace("%", "%%"))
     print("Copia concluida e views recriadas no servidor.")
 

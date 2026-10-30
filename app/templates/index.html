@@ -193,6 +193,7 @@
     <button type="button" role="tab" class="aba" data-aba="destaques" aria-selected="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/></svg>Destaques do mês</button>
     <button type="button" role="tab" class="aba" data-aba="causas" aria-selected="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>Causas</button>
     <button type="button" role="tab" class="aba" data-aba="tipos" aria-selected="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v20M17 6H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>Receitas e despesas</button>
+    <button type="button" role="tab" class="aba" data-aba="revisar" aria-selected="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l9.5 17h-19z"/><path d="M12 10v4M12 17.5v.01"/></svg>Revisar lançamentos</button>
     <button type="button" role="tab" class="aba" data-aba="tabela" aria-selected="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16"/></svg>Tabela mensal</button>
     <button type="button" role="tab" class="aba" data-aba="conf" aria-selected="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>Conferência</button>
   </nav>
@@ -221,6 +222,7 @@
   <section class="destaques" id="destaques" hidden></section>
   <section class="destaques" id="causas" hidden></section>
   <section class="destaques" id="tipos" hidden></section>
+  <section class="destaques" id="revisar" hidden></section>
   <div class="graficos" id="aba-graficos">
     <section class="graf" style="--cor:var(--c-receita)"><h2><span class="ico sm" data-ico="moedas"></span>Receita bruta (R$)<span class="pill" id="pl-c1"><b>–</b><small>Total no período</small></span></h2><p class="formula">Tudo que entrou na atividade, sem empréstimo nem investimento</p><div class="cv"><canvas id="c1"></canvas></div></section>
     <section class="graf" style="--cor:var(--c-desp)"><h2><span class="ico sm" data-ico="calc"></span>Despesa direta (R$)<span class="pill" id="pl-c7"><b>–</b><small>Total no período</small></span></h2><p class="formula">Gastos diretos da atividade, sem empréstimo, investimento, aleitamento e mão de obra familiar</p><div class="cv"><canvas id="c7"></canvas></div></section>
@@ -373,6 +375,7 @@ function carregaPendentes(nome){
   else if (nome === 'destaques') carregaDestaques(q, parcial);
   else if (nome === 'causas') carregaCausas(q);
   else if (nome === 'tipos') carregaTipos(q);
+  else if (nome === 'revisar') carregaRevisar(q);
 }
 async function atualiza(){
   const q = new URLSearchParams({projeto:$('proj').value, supervisor:$('sup').value, tecnico:$('tec').value, propriedade:$('prop').value, municipio:$('mun').value, regiao:$('reg').value, situacao:$('sit').value, de:$('de').value, ate:$('ate').value});
@@ -412,7 +415,7 @@ async function atualiza(){
   ].join('') : '<p>Sem dados para o filtro.</p>';
   // Abas pesadas (macro, destaques, causas, tipos): só consultam o banco quando a aba está aberta.
   // As outras ficam pendentes e carregam no primeiro clique, já com os filtros atuais.
-  cargaAba = {q, parcial, pendentes: new Set(['macro', 'destaques', 'causas', 'tipos'])};
+  cargaAba = {q, parcial, pendentes: new Set(['macro', 'destaques', 'causas', 'tipos', 'revisar'])};
   carregaPendentes(abaAtual);
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   const soma = f => d.reduce((a,x)=>a+(+x[f]||0),0), media = f => { const v = d.map(x=>x[f]).filter(z=>z!=null); return v.length ? v.reduce((a,z)=>a+z,0)/v.length : null; };
@@ -527,6 +530,35 @@ async function carregaCausas(q){
       scales: {x: {ticks: {...tick, callback: v => 'R$ ' + nf.format(v)}}, y: {ticks: tick, grid: {display: false}}}}});
 }
 // ---- Aba "Receitas e despesas": receita bruta, despesa direta e despesa total, por tipo
+// ---- Aba "Revisar lançamentos": visitas com a referência (mês) cadastrada diferente do mês dos lançamentos; baixa em Excel (uma aba por supervisor)
+let revisarAtual = [];
+async function carregaRevisar(q){
+  const box = $('revisar');
+  let d = {};
+  try { d = await (await fetch('/api/revisar?' + q)).json(); } catch(e) { d = {aviso: 'Não consegui ler a lista: ' + e}; }
+  const it = d.itens || [], esc = x => String(x ?? '').replace(/[&<>]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;'}[c]));
+  const aviso = d.aviso ? `<p class="d-vazio">⚠ ${esc(d.aviso)}</p>` : '';
+  revisarAtual = it;
+  if (!it.length) { box.innerHTML = `<h2>Visitas para revisar</h2>${aviso}<p class="d-vazio">Nenhuma visita para revisar no período e nos filtros escolhidos.</p>`; return; }
+  const lanc = x => x.mes_lanc_de + (x.mes_lanc_ate !== x.mes_lanc_de ? ' a ' + x.mes_lanc_ate : '');
+  const acao = x => `Corrigir no SisATeG: a visita está com referência ${x.mes_visita}, mas os lançamentos são de ${lanc(x)}. A planilha mostra em ${x.mes_lanc_de} e o painel em ${x.mes_painel}.`;
+  box.innerHTML = `<div class="d-topo"><h2>Visitas para revisar: ${esc($('de').value)} a ${esc($('ate').value)}</h2><button class="btn sec" id="btnRev" type="button">Baixar Excel</button></div>
+    <p class="d-resumo"><b>${nf.format(it.length)}</b> visita(s) com o mês de referência diferente do mês dos lançamentos. A planilha do SisATeG conta pelo mês dos lançamentos e o painel pela referência da visita, então a visita aparece em meses diferentes e a conferência mostra diferença. Peça ao técnico para corrigir a referência (ou a data dos lançamentos) na visita indicada. Depois da correção e da próxima atualização, ela sai desta lista.</p>${aviso}
+    <div class="rolagem" style="max-height:520px"><table class="t-simples"><thead><tr><th>Supervisor</th><th>Técnico</th><th>Propriedade</th><th>Município</th><th>ID Visita</th><th>Mês na visita</th><th>Mês dos lançamentos</th><th>Painel mostra em</th></tr></thead><tbody>` +
+    it.map(x => `<tr><td>${esc(x.supervisor) || '<i>sem supervisor</i>'}</td><td>${esc(x.tecnico) || '<i>sem técnico</i>'}</td><td>${esc(x.propriedade)} (${esc(x.id_propriedade)})</td><td>${esc(x.municipio)}</td><td>${esc(x.id_visita)}</td><td>${esc(x.mes_visita)}</td><td>${esc(lanc(x))}</td><td>${esc(x.mes_painel)}</td></tr>`).join('') +
+    `</tbody></table></div>`;
+  $('btnRev').onclick = () => {
+    if (!window.XLSX) { alert('Não foi possível carregar o gerador de Excel. Verifique a internet e tente de novo.'); return; }
+    const cab = ['Supervisor', 'Técnico', 'ID Propriedade', 'Propriedade', 'Município', 'Projeto', 'ID Visita', 'Mês na visita (cadastro)', 'Mês dos lançamentos (planilha)', 'Painel mostra em', 'O que fazer'];
+    const lin = a => [cab, ...a.map(x => [x.supervisor ?? '', x.tecnico ?? '', x.id_propriedade, x.propriedade, x.municipio, x.projeto, x.id_visita, x.mes_visita, lanc(x), x.mes_painel, acao(x)])];
+    const mk = a => { const ws = XLSX.utils.aoa_to_sheet(lin(a)); ws['!cols'] = [26, 32, 14, 32, 18, 22, 12, 14, 16, 14, 90].map(w => ({wch: w})); return ws; };
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, mk(revisarAtual), 'Todas');
+    const por = new Map(); revisarAtual.forEach(x => { const k = x.supervisor || 'Sem supervisor'; if (!por.has(k)) por.set(k, []); por.get(k).push(x); });
+    const usados = new Set(['Todas']);
+    por.forEach((a, k) => { let n = k.replace(/[\\\/?*\[\]:]/g, ' ').slice(0, 31).trim() || 'Sem supervisor', i = 2; while (usados.has(n)) n = n.slice(0, 28) + ' ' + i++; usados.add(n); XLSX.utils.book_append_sheet(wb, mk(a), n); });
+    XLSX.writeFile(wb, `visitas_para_revisar_${$('de').value}_a_${$('ate').value}.xlsx`);
+  };
+}
 async function carregaTipos(q){
   const box = $('tipos');
   let d = {};
@@ -815,7 +847,7 @@ let confArquivo = null;
 $('confArq').onchange = ev => { confArquivo = ev.target.files[0]; if (confArquivo) conferePlanilha(confArquivo); };
 $('confSit').onchange = () => { if (confArquivo) conferePlanilha(confArquivo); };
 function mostraAba(nome){
-  const alvos = {macro:'macro', graficos:'aba-graficos', destaques:'destaques', causas:'causas', tipos:'tipos', tabela:'aba-tabela', conf:'conf'};
+  const alvos = {macro:'macro', graficos:'aba-graficos', destaques:'destaques', causas:'causas', tipos:'tipos', revisar:'revisar', tabela:'aba-tabela', conf:'conf'};
   Object.entries(alvos).forEach(([n, id]) => { $(id).hidden = (n !== nome); });
   abaAtual = nome; carregaPendentes(nome);
   document.querySelectorAll('.aba').forEach(b => { const on = b.dataset.aba === nome; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); });
