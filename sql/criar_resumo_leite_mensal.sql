@@ -117,18 +117,10 @@ WHERE r.atividade = 'BOVINOCULTURA DE LEITE' AND r.status_item = 'ATIVO' AND r.t
   AND EXISTS (SELECT 1 FROM tmp_base q WHERE q.id_visita = r.id_visita AND q.id_item = r.id_item AND q.dt_referencia = r.dt_referencia AND q.tipo_valor = 'QUANTIDADE')
   AND NOT EXISTS (SELECT 1 FROM tmp_base p WHERE p.id_visita = r.id_visita AND p.id_item = r.id_item AND p.dt_referencia = r.dt_referencia AND p.tipo_valor = 'VALOR_UNITARIO');
 UPDATE tmp_base SET tipo_registro = 'PRINCIPAL' WHERE tipo_registro = 'DETALHADO';   -- (só as linhas de preço acrescentadas acima eram detalhadas)
--- O mês de cada visita é o da REFERÊNCIA DA VISITA (é assim que a planilha do SisATeG conta); a data do item só vale se a visita não tiver referência
-UPDATE tmp_base b SET dt_referencia = to_date(lv.referencia_visita || '-01', 'YYYY-MM-DD')
-FROM public.sisateg_rel_listar_visita lv
-WHERE lv.id_visita::text = b.id_visita::text AND lv.referencia_visita ~ '^[0-9]{4}-[0-9]{2}$'
-  AND ABS(to_date(lv.referencia_visita || '-01', 'YYYY-MM-DD') - b.dt_referencia::date) <= 366;   -- referência muito distante da data do item (ex.: visita de 2023 editada em 2026) é ignorada
--- Visita SEM referência válida: o mês dela passa a ser o mais recente entre os itens dela
+-- O mês de cada visita é o mês dos LANÇAMENTOS (é assim que a planilha do SisATeG conta; a referência cadastrada na visita às vezes está errada).
+-- Se a visita tem lançamentos em mais de um mês, ela inteira fica no mês mais recente dos itens dela.
 UPDATE tmp_base b SET dt_referencia = m.mx
-FROM (SELECT b2.id_visita, MAX(b2.dt_referencia) AS mx
-      FROM tmp_base b2
-      WHERE NOT EXISTS (SELECT 1 FROM public.sisateg_rel_listar_visita lv
-                        WHERE lv.id_visita::text = b2.id_visita::text AND lv.referencia_visita ~ '^[0-9]{4}-[0-9]{2}$')
-      GROUP BY 1) m
+FROM (SELECT id_visita, MAX(dt_referencia) AS mx FROM tmp_base GROUP BY 1) m
 WHERE m.id_visita = b.id_visita AND b.dt_referencia < m.mx;
 CREATE INDEX ON tmp_base (id_propriedade, id_visita);
 ANALYZE tmp_base;
@@ -317,8 +309,8 @@ CREATE INDEX ON public.resumo_tipo (id_propriedade, mes);
 
 -- ---------------------------------------------------------------------
 -- Visitas para REVISAR: a referência cadastrada na visita (mês) é diferente do mês dos lançamentos.
--- O SisATeG/planilha conta o mês dos lançamentos; o painel usa a referência da visita (se estiver a até 1 ano de distância).
--- Assim a visita aparece em meses diferentes na planilha e no painel. A correção é no SisATeG (técnico).
+-- A planilha e o painel contam pelo mês dos lançamentos; o cadastro da visita está com outro mês (erro de cadastro no SisATeG).
+-- A correção é no SisATeG (técnico); enquanto isso, o painel segue o mês dos lançamentos.
 DROP TABLE IF EXISTS public.resumo_leite_revisar;
 CREATE TABLE public.resumo_leite_revisar AS
 SELECT r.id_visita::text AS id_visita, r.id_propriedade,
@@ -326,8 +318,7 @@ SELECT r.id_visita::text AS id_visita, r.id_propriedade,
        MAX(NULLIF(lv.tecnico_atual, '')) AS tecnico, replace(MAX(NULLIF(lv.supervisor_atual, '')), '&#65533;', '') AS supervisor_visita,
        lv.referencia_visita AS mes_visita,
        to_char(MIN(r.dt_referencia), 'YYYY-MM') AS mes_lanc_de, to_char(MAX(r.dt_referencia), 'YYYY-MM') AS mes_lanc_ate,
-       CASE WHEN ABS(to_date(lv.referencia_visita || '-01', 'YYYY-MM-DD') - MIN(r.dt_referencia)::date) <= 366
-            THEN lv.referencia_visita ELSE to_char(MIN(r.dt_referencia), 'YYYY-MM') END AS mes_painel
+       to_char(MAX(r.dt_referencia), 'YYYY-MM') AS mes_painel
 FROM public.sisateg_receita_despesa r
 JOIN public.sisateg_rel_listar_visita lv ON lv.id_visita::text = r.id_visita::text
 WHERE r.atividade = 'BOVINOCULTURA DE LEITE' AND r.status_item = 'ATIVO' AND r.tipo_registro = 'PRINCIPAL'
