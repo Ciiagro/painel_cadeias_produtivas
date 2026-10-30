@@ -51,7 +51,7 @@ _CACHE: dict = {}
 
 @app.middleware("http")
 async def cache_api(request: Request, call_next):
-    if request.method != "GET" or not request.url.path.startswith("/api/") or _CACHE_TTL <= 0:
+    if request.method != "GET" or not request.url.path.startswith("/api/") or _CACHE_TTL <= 0 or request.url.path in ("/api/conferencia", "/api/visitas_painel"):   # a conferência tem de mostrar o dado novo na hora (logo após a atualização)
         return await call_next(request)
     chave = request.url.path + "?" + request.url.query
     agora = time.time()
