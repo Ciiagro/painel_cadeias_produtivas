@@ -2,11 +2,12 @@
 Lê SOMENTE a view do servidor público (nunca o banco local)."""
 import os
 import re
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import create_engine, text
 
@@ -39,6 +40,33 @@ if not re.fullmatch(r"[A-Za-z0-9_]+\.[A-Za-z0-9_]+", TABLE):
 engine = create_engine(DB_URL, pool_pre_ping=True, pool_size=2, max_overflow=1, pool_recycle=300,
                        connect_args={"connect_timeout": 10})
 app = FastAPI(title="Acompanhamento mensal das cadeias")
+
+# Cache das respostas /api/*: os dados só mudam na atualização diária, então repetir a mesma consulta
+# (trocar de aba, voltar a um filtro, outro usuário abrindo o painel) não precisa ir ao banco de novo.
+# CACHE_TTL em segundos (padrão 300); CACHE_TTL=0 desliga. Vale por instância; na Vercel o s-maxage
+# deixa também a borda guardar a resposta.
+_CACHE_TTL = int(os.environ.get("CACHE_TTL", "300"))
+_CACHE: dict = {}
+
+
+@app.middleware("http")
+async def cache_api(request: Request, call_next):
+    if request.method != "GET" or not request.url.path.startswith("/api/") or _CACHE_TTL <= 0:
+        return await call_next(request)
+    chave = request.url.path + "?" + request.url.query
+    agora = time.time()
+    cab = {"Cache-Control": f"public, max-age=60, s-maxage={_CACHE_TTL}, stale-while-revalidate={_CACHE_TTL * 2}"}
+    hit = _CACHE.get(chave)
+    if hit and agora - hit[0] < _CACHE_TTL:
+        return Response(hit[1], media_type="application/json", headers={**cab, "X-Cache": "HIT"})
+    resp = await call_next(request)
+    if resp.status_code != 200:
+        return resp
+    corpo = b"".join([c async for c in resp.body_iterator])
+    if len(_CACHE) >= 300:   # limite simples para não crescer sem fim
+        _CACHE.clear()
+    _CACHE[chave] = (agora, corpo)
+    return Response(corpo, status_code=200, media_type="application/json", headers={**cab, "X-Cache": "MISS"})
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
 
@@ -145,9 +173,8 @@ def serie(supervisor: str | None = None, tecnico: str | None = None, propriedade
     with engine.connect() as con:
         rows = [dict(r._mapping) for r in con.execute(text(sql), p)]
         total_props = con.execute(text(f"SELECT COUNT(DISTINCT id_propriedade) FROM {PROPS} WHERE {' AND '.join(wp)}"), pp).scalar()
-    # Preço médio do leite = média dos preços de cada propriedade no mês (leite in natura ÷ litros, sem bonificação), como no SisATeG
-    preco_mes = {}
-    with engine.connect() as con:
+        # Preço médio do leite = média dos preços de cada propriedade no mês (leite in natura ÷ litros, sem bonificação), como no SisATeG
+        preco_mes = {}
         for r in con.execute(text(f"""SELECT mes, id_propriedade, SUM(leite_in_natura_rs) AS rs, SUM(leite_vendido_l) AS l
                 FROM {TABLE} WHERE {' AND '.join(where)} AND leite_vendido_l > 0 GROUP BY mes, id_propriedade"""), p).mappings():
             if r["l"] and float(r["l"]) > 0 and r["rs"] is not None:
@@ -568,6 +595,15 @@ def conferencia(mes: str = Query(..., description="YYYY-MM")):
                       WHERE mes = :m AND classe = 'Fora da receita bruta' AND COALESCE(projeto, '') NOT ILIKE 'TREINAMENTO%' GROUP BY 1"""), {"m": mes}).mappings()}
     except Exception:
         fora = {}
+    tipos = {}
+    try:   # de que tipo é a receita/despesa de cada propriedade no mês (para a conferência dizer DE ONDE VEM a diferença)
+        with engine.connect() as con:
+            for r in con.execute(text(f"""SELECT id_propriedade::text AS id, grupo, classe, subgrupo, SUM(valor) AS v FROM {TIPO}
+                      WHERE mes = :m AND COALESCE(projeto, '') NOT ILIKE 'TREINAMENTO%' GROUP BY 1, 2, 3, 4
+                      HAVING ABS(COALESCE(SUM(valor), 0)) > 0"""), {"m": mes}).mappings():
+                tipos.setdefault(r["id"], []).append([r["grupo"], r["classe"], r["subgrupo"], float(r["v"] or 0)])
+    except Exception:
+        tipos = {}
     try:
         rows = ler(True)
     except Exception:
@@ -575,7 +611,7 @@ def conferencia(mes: str = Query(..., description="YYYY-MM")):
             rows = ler(False); com_visita = False   # servidor ainda sem a coluna id_visita (rode o atualizar_leite.bat)
         except Exception as e:
             return {"erro": str(e).splitlines()[0][:300]}
-    return {"mes": mes, "com_visita": com_visita, "treino": treino,
+    return {"mes": mes, "com_visita": com_visita, "treino": treino, "tipos": tipos,
             "itens": [{"id": r["id"], "id_visita": r["id_visita"], "propriedade": r["propriedade"], "municipio": r["municipio"], "projeto": r["projeto"], "ativa": bool(r["ativa"]), "rec_fora": fora.get(r["id"], 0.0),
                        "rec": float(r["rec"] or 0), "desp": float(r["desp"] or 0), "prod": float(r["prod"] or 0)} for r in rows]}
 

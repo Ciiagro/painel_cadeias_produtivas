@@ -79,6 +79,17 @@
   .aba svg{width:20px;height:20px}
   .aba:hover{background:#e1eee6;border-color:var(--verde)}
   .aba.on{background:linear-gradient(90deg,var(--verde-esc),var(--verde));color:#fff;border-color:var(--verde-esc);box-shadow:0 3px 8px rgba(19,74,47,.30)}
+  /* destaque da cadeia */
+  .atividade{font-size:30px;font-weight:800;letter-spacing:-.01em;background:rgba(255,255,255,.18);border:1.5px solid rgba(255,255,255,.6);border-radius:14px;padding:10px 22px;text-shadow:0 1px 3px rgba(0,0,0,.4);margin:0;flex:none}   /* nome da cadeia logo depois de "Acompanhamento mensal", à esquerda */
+  .atividade svg{width:46px;height:46px}
+  @media(max-width:700px){.atividade{font-size:20px;padding:8px 14px;margin:0} .atividade svg{width:30px;height:30px}}
+  /* menu com fundo destacado */
+  /* menu em verde escuro (mesma cor do cabeçalho) para não se confundir com o fundo da página; aba ativa em branco com filete dourado */
+  .abas{background:linear-gradient(90deg,var(--verde-esc),var(--verde));border-color:var(--verde-esc);box-shadow:0 4px 14px rgba(19,74,47,.35)}
+  .aba{background:rgba(255,255,255,.14);color:#fff;border-color:rgba(255,255,255,.22)}
+  .aba:hover{background:rgba(255,255,255,.26);border-color:rgba(255,255,255,.55)}
+  .aba:focus{outline:none} .aba:focus-visible{outline:2px solid #f0b429;outline-offset:2px}
+  .aba.on{background:#fff;color:var(--verde-esc);border-color:#f0b429;box-shadow:0 5px 14px rgba(0,0,0,.30);transform:translateY(-1px)}
   .destaques{background:var(--surf);border:1px solid var(--linha);border-left:5px solid var(--verde);border-radius:12px;padding:16px 18px;margin-bottom:18px}
   .destaques h2{margin:0 0 6px;font-size:17px;font-weight:700}
   .d-resumo{margin:0 0 12px;font-size:14.5px;line-height:1.55}
@@ -353,6 +364,16 @@ async function carregaDestaques(q, parcial){
   }
   box.innerHTML = `<h2>Destaques: ${d.mes}${a ? ' comparado a ' + a : ''}</h2><p class="d-resumo">${frase}</p>` + porque + (blocos ? `<div class="d-grid">${blocos}</div>` : '');
 }
+let cargaAba = null, abaAtual = 'graficos';
+function carregaPendentes(nome){
+  if (!cargaAba || !cargaAba.pendentes.has(nome)) return;
+  cargaAba.pendentes.delete(nome);
+  const {q, parcial} = cargaAba;
+  if (nome === 'macro') carregaMacro();
+  else if (nome === 'destaques') carregaDestaques(q, parcial);
+  else if (nome === 'causas') carregaCausas(q);
+  else if (nome === 'tipos') carregaTipos(q);
+}
 async function atualiza(){
   const q = new URLSearchParams({projeto:$('proj').value, supervisor:$('sup').value, tecnico:$('tec').value, propriedade:$('prop').value, municipio:$('mun').value, regiao:$('reg').value, situacao:$('sit').value, de:$('de').value, ate:$('ate').value});
   // título da tela: o recorte escolhido nos filtros
@@ -389,10 +410,10 @@ async function atualiza(){
     cartao('Margem bruta da atividade', brl2(ult.margem_bruta), ult.var_margem_pct, d.map(x=>x.margem_bruta), 'var(--c-mat)', 'barras'),
     cartao('Margem bruta do leite', brl2(ult.margem_leite), ult.var_margem_leite_pct, d.map(x=>x.margem_leite), 'var(--c-mleite)', 'calc')
   ].join('') : '<p>Sem dados para o filtro.</p>';
-  carregaDestaques(q, parcial);
-  carregaCausas(q);
-  carregaTipos(q);
-  carregaMacro();
+  // Abas pesadas (macro, destaques, causas, tipos): só consultam o banco quando a aba está aberta.
+  // As outras ficam pendentes e carregam no primeiro clique, já com os filtros atuais.
+  cargaAba = {q, parcial, pendentes: new Set(['macro', 'destaques', 'causas', 'tipos'])};
+  carregaPendentes(abaAtual);
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   const soma = f => d.reduce((a,x)=>a+(+x[f]||0),0), media = f => { const v = d.map(x=>x[f]).filter(z=>z!=null); return v.length ? v.reduce((a,z)=>a+z,0)/v.length : null; };
   const setPill = (id, v, moeda, rot, casas) => { const el = $('pl-'+id); if (!el) return; el.innerHTML = `<b>${v==null?'–':(moeda?'R$ ':'')+fmt(v,casas)}</b><small>${rot}</small>`; };
@@ -753,8 +774,20 @@ async function conferePlanilha(file){
     const lin = (rot, k, f, kp) => { const a = soma(A, k), p = soma(P, kp || k), df = p - a; return `<tr><td>${rot}</td><td class="n">${f(a)}</td><td class="n">${f(p)}</td><td class="n ${Math.abs(df) > 1 ? 'neg' : ''}">${(df > 0 ? '+' : '') + f(df)}</td></tr>`; };
     const R = x => 'R$ ' + nf.format(Math.round(x * 100) / 100), L = x => nf.format(Math.round(x)) + ' L';
     const cnt = (rot, n, cor) => `<div class="d-item"><span>${rot}</span><span class="${cor || ''}"><b>${nf.format(n)}</b></span></div>`;
-    const tabDif = dif.length ? `<div class="rolagem" style="max-height:460px"><table class="t-simples"><thead><tr><th>ID Visita</th><th>Propriedade</th><th>Município</th><th class="n">Receita planilha</th><th class="n" title="receita bruta + venda de bem e recebimento de empréstimo (o SisATeG soma tudo em Receitas)">Receita painel</th><th class="n">Δ receita</th><th class="n">Despesa planilha</th><th class="n">Despesa painel</th><th class="n">Δ despesa</th><th class="n">Δ produção (L)</th></tr></thead><tbody>` +
-      dif.slice(0, 300).map(x => `<tr><td>${x.a.visitas.join(', ')}</td><td>${x.a.propriedade ?? ''}</td><td>${x.a.municipio ?? ''}</td><td class="n">${R(x.a.rec)}</td><td class="n">${R(x.p.recC)}</td><td class="n">${R(x.dr)}</td><td class="n">${R(x.a.desp)}</td><td class="n">${R(x.p.desp)}</td><td class="n">${R(x.dd)}</td><td class="n">${nf.format(Math.round(x.dp))}</td></tr>`).join('') + `</tbody></table></div>${dif.length > 300 ? `<p class="d-resumo">Mostrando as 300 maiores de ${dif.length}. Baixe o arquivo para ver todas.</p>` : ''}` : '';
+    // explica a diferença: se é de receita, mostra a receita do painel por tipo; se é de despesa, a despesa por tipo (com o que o painel deixa fora da despesa direta); se é de produção, os litros
+    const escH = s => String(s ?? '').replace(/[&<>]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;'}[c]));
+    const tiposD = d.tipos || {};
+    const rotClasse = {'Outras despesas': ' [fora da despesa direta]', 'Aleitamento (fora do total)': ' [fora do total]', 'Fora das despesas': ' [empréstimo/investimento: fora]', 'Fora da receita bruta': ' [fora da receita bruta]'};
+    const linhaTipo = (L, g) => L.filter(t => t[0] === g).map(t => `${t[2]} ${R(t[3])}${rotClasse[t[1]] ?? ''}`).join('; ') || 'nenhum lançamento';
+    const oQue = (p, x) => {
+      const L = tiposD[p.id] || [], partes = [];
+      if (Math.abs(x.dr) > 1) partes.push('Receita no painel: ' + linhaTipo(L, 'Receita'));
+      if (Math.abs(x.dd) > 1) partes.push('Despesa no painel: ' + linhaTipo(L, 'Despesa'));
+      if (Math.abs(x.dp) > 1) partes.push(`Produção: painel ${nf.format(Math.round(p.prod))} L x planilha ${nf.format(Math.round(x.a.prod))} L`);
+      return partes.join(' | ');
+    };
+    const tabDif = dif.length ? `<div class="rolagem" style="max-height:460px"><table class="t-simples"><thead><tr><th>ID Visita</th><th>Propriedade</th><th>Município</th><th class="n">Receita planilha</th><th class="n" title="receita bruta + venda de bem e recebimento de empréstimo (o SisATeG soma tudo em Receitas)">Receita painel</th><th class="n">Δ receita</th><th class="n">Despesa planilha</th><th class="n">Despesa painel</th><th class="n">Δ despesa</th><th class="n">Δ produção (L)</th><th title="De que é a diferença: o que o painel tem lançado nesta propriedade no mês">De que é a diferença</th></tr></thead><tbody>` +
+      dif.slice(0, 300).map(x => `<tr><td>${x.a.visitas.join(', ')}</td><td>${x.a.propriedade ?? ''}</td><td>${x.a.municipio ?? ''}</td><td class="n">${R(x.a.rec)}</td><td class="n">${R(x.p.recC)}</td><td class="n">${R(x.dr)}</td><td class="n">${R(x.a.desp)}</td><td class="n">${R(x.p.desp)}</td><td class="n">${R(x.dd)}</td><td class="n">${nf.format(Math.round(x.dp))}</td><td>${escH(oQue(x.p, x))}</td></tr>`).join('') + `</tbody></table></div>${dif.length > 300 ? `<p class="d-resumo">Mostrando as 300 maiores de ${dif.length}. Baixe o arquivo para ver todas.</p>` : ''}` : '';
     const nomeA = l => `visita ${l.visita} · ${l.propriedade ?? ''} (${l.municipio ?? ''})`, nomeP = p => `${p.id} ${p.propriedade ?? ''} (${p.municipio ?? ''})`;
     const lst = (l, f) => l.slice(0, 40).map(f).join('; ') + (l.length > 40 ? '; …' : '');
     box.innerHTML = `${aviso}<p class="d-resumo"><b>Mês conferido: ${mes}</b> — ${ok ? '<span class="pos"><b>tudo bate com o painel</b></span>' : '<span class="neg"><b>há diferenças</b></span>'}</p>
@@ -767,7 +800,7 @@ async function conferePlanilha(file){
       ${soPan.length ? `<details class="mini"><summary>Só no painel</summary><p>${lst(soPan, nomeP)}</p></details>` : ''}
       ${dif.length ? `<h3 class="c-tit">Visitas com valor diferente (maiores diferenças primeiro)</h3>${tabDif}<p><button type="button" id="confBaixa" class="btn">Baixar todas as diferenças (.xlsx)</button></p>` : ''}`;
     const bt = $('confBaixa');
-    if (bt) bt.onclick = () => { const ws = XLSX.utils.json_to_sheet(dif.map(x => ({'ID Visita': x.a.visitas.join(', '), 'ID Propriedade': x.a.id, 'Propriedade': x.a.propriedade, 'Município': x.a.municipio, 'Receita planilha': x.a.rec, 'Receita painel': x.p.recC, 'Δ receita': x.dr, 'Despesa planilha': x.a.desp, 'Despesa painel': x.p.desp, 'Δ despesa': x.dd, 'Produção planilha': x.a.prod, 'Produção painel': x.p.prod, 'Δ produção': x.dp})).concat(soArq.map(x => ({'ID Visita': x.visita, 'ID Propriedade': x.id, 'Propriedade': x.propriedade, 'Município': x.municipio, 'Receita planilha': x.rec, 'Despesa planilha': x.desp, 'Produção planilha': x.prod, 'Observação': 'só na planilha'}))));
+    if (bt) bt.onclick = () => { const ws = XLSX.utils.json_to_sheet(dif.map(x => ({'ID Visita': x.a.visitas.join(', '), 'ID Propriedade': x.a.id, 'Propriedade': x.a.propriedade, 'Município': x.a.municipio, 'Receita planilha': x.a.rec, 'Receita painel': x.p.recC, 'Δ receita': x.dr, 'Despesa planilha': x.a.desp, 'Despesa painel': x.p.desp, 'Δ despesa': x.dd, 'Produção planilha': x.a.prod, 'Produção painel': x.p.prod, 'Δ produção': x.dp, 'De que é a diferença': oQue(x.p, x)})).concat(soArq.map(x => ({'ID Visita': x.visita, 'ID Propriedade': x.id, 'Propriedade': x.propriedade, 'Município': x.municipio, 'Receita planilha': x.rec, 'Despesa planilha': x.desp, 'Produção planilha': x.prod, 'Observação': 'só na planilha'}))));
       const w2 = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(w2, ws, 'Diferenças'); XLSX.writeFile(w2, 'conferencia_' + mes + '.xlsx'); };
   } catch (e) { box.innerHTML = '<p class="d-vazio">Erro ao conferir: ' + e.message + '</p>'; }
 }
@@ -777,6 +810,7 @@ $('confSit').onchange = () => { if (confArquivo) conferePlanilha(confArquivo); }
 function mostraAba(nome){
   const alvos = {macro:'macro', graficos:'aba-graficos', destaques:'destaques', causas:'causas', tipos:'tipos', tabela:'aba-tabela', conf:'conf'};
   Object.entries(alvos).forEach(([n, id]) => { $(id).hidden = (n !== nome); });
+  abaAtual = nome; carregaPendentes(nome);
   document.querySelectorAll('.aba').forEach(b => { const on = b.dataset.aba === nome; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); });
   if (nome === 'graficos' || nome === 'causas' || nome === 'macro') Object.values(charts).forEach(c => c.resize());
 }
