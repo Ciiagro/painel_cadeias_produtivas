@@ -823,7 +823,7 @@ async function conferePlanilha(file){
     let vp = {};   // onde o painel tem cada visita que só aparece na planilha (outro mês, ou nenhum)
     if (soArq.length) { try { const rv = await fetch('/api/visitas_painel?ids=' + soArq.slice(0, 100).map(l => l.visita).join(',')); const dv = rv.ok ? await rv.json() : {}; vp = dv.itens || {}; } catch (e) { vp = {}; } }
     const motivoVisita = l => { const o = vp[l.visita];
-      if (o && o.length) return 'A visita está no painel em ' + o.map(x => x.mes).join(', ') + ' (o painel usa a data de referência dos lançamentos, não o mês da planilha).';
+      if (o && o.length) return 'No painel esta visita aparece em ' + o.map(x => x.mes).join(', ') + ', porque é a referência cadastrada na visita. A planilha mostra no mês dos lançamentos (' + mes + '). Corrigir a referência da visita no SisATeG.';
       const q = P0.find(p => p.id === l.id);
       if (q) return 'A propriedade está no painel neste mês com a visita ' + q.id_visita + ', mas esta visita não está: provável visita excluída/inválida ou sem lançamento válido.';
       return 'A visita e a propriedade não aparecem no painel: provável visita excluída no SisATeG, sem lançamento válido, ou propriedade inativa.'; };
