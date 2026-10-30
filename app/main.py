@@ -616,6 +616,27 @@ def conferencia(mes: str = Query(..., description="YYYY-MM")):
                        "rec": float(r["rec"] or 0), "desp": float(r["desp"] or 0), "prod": float(r["prod"] or 0)} for r in rows]}
 
 
+@app.get("/api/visitas_painel")
+def visitas_painel(ids: str = Query(..., description="ids de visita separados por vírgula")):
+    """Conferência: em que mês(es) o painel tem cada visita (para explicar visita que está na planilha e não aparece no mês)."""
+    lista = [i for i in re.findall(r"\d+", ids)][:200]
+    if not lista:
+        return {"itens": {}}
+    try:
+        with engine.connect() as con:
+            rows = con.execute(text(f"""SELECT id_visita, mes, id_propriedade::text AS id, propriedade, receita_bruta AS rec, despesa_direta AS desp, producao_leite_l AS prod
+                       FROM {TABLE} WHERE id_visita IS NOT NULL AND string_to_array(id_visita, ',') && CAST(:ids AS text[])"""), {"ids": lista}).mappings().all()
+    except Exception as e:
+        return {"erro": str(e).splitlines()[0][:300]}
+    out = {}
+    for r in rows:
+        for v in str(r["id_visita"]).split(","):
+            v = v.strip()
+            if v in lista:
+                out.setdefault(v, []).append({"mes": str(r["mes"])[:7], "id": r["id"], "propriedade": r["propriedade"], "rec": float(r["rec"] or 0), "desp": float(r["desp"] or 0), "prod": float(r["prod"] or 0)})
+    return {"itens": out}
+
+
 @app.get("/health")
 def health():
     return {"ok": True}
