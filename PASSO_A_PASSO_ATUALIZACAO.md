@@ -63,7 +63,7 @@ Mesmos passos, com `python scripts/atualizar_tudo.py` (completo).
 - Receita = receita bruta + empréstimo + investimento (venda de bem).
 - Produção = leite vendido + consumido + bezerras + descarte.
 - Só visitas não excluídas; só propriedades ativas; projetos de Treinamento fora.
-- Mês da visita = o mês dos LANÇAMENTOS (a data mais recente dos itens da visita), como a planilha do SisATeG. A `referencia_visita` cadastrada não é usada; visitas em que ela difere aparecem na aba Revisar lançamentos.
+- Mês da visita = a `referencia_visita` da tabela de visitas (se válida e a até 366 dias da data do item). Sem referência, vale a data mais recente dos itens.
 - Se o item tem quantidade ativa mas não tem preço principal ativo, usa-se o preço detalhado ativo.
 
 ## Se der erro

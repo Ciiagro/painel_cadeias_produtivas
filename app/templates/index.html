@@ -541,9 +541,9 @@ async function carregaRevisar(q){
   revisarAtual = it;
   if (!it.length) { box.innerHTML = `<h2>Visitas para revisar</h2>${aviso}<p class="d-vazio">Nenhuma visita para revisar no período e nos filtros escolhidos.</p>`; return; }
   const lanc = x => x.mes_lanc_de + (x.mes_lanc_ate !== x.mes_lanc_de ? ' a ' + x.mes_lanc_ate : '');
-  const acao = x => `Corrigir no SisATeG: a visita está com referência ${x.mes_visita}, mas os lançamentos são de ${lanc(x)}. O painel mostra em ${x.mes_painel}.`;
+  const acao = x => `Corrigir no SisATeG: a visita está com referência ${x.mes_visita}, mas os lançamentos são de ${lanc(x)}. A planilha mostra em ${x.mes_lanc_de} e o painel em ${x.mes_painel}.`;
   box.innerHTML = `<div class="d-topo"><h2>Visitas para revisar: ${esc($('de').value)} a ${esc($('ate').value)}</h2><button class="btn sec" id="btnRev" type="button">Baixar Excel</button></div>
-    <p class="d-resumo"><b>${nf.format(it.length)}</b> visita(s) com o mês de referência diferente do mês dos lançamentos. O painel e a planilha do SisATeG contam pelo mês dos lançamentos, mas o cadastro da visita está com outro mês. Isso não muda os valores do painel, mas é erro de cadastro: peça ao técnico para corrigir a referência da visita no SisATeG. Depois da correção e da próxima atualização, ela sai desta lista.</p>${aviso}
+    <p class="d-resumo"><b>${nf.format(it.length)}</b> visita(s) com o mês de referência diferente do mês dos lançamentos. A planilha do SisATeG conta pelo mês dos lançamentos e o painel pela referência da visita, então a visita aparece em meses diferentes e a conferência mostra diferença. Peça ao técnico para corrigir a referência (ou a data dos lançamentos) na visita indicada. Depois da correção e da próxima atualização, ela sai desta lista.</p>${aviso}
     <div class="rolagem" style="max-height:520px"><table class="t-simples"><thead><tr><th>Supervisor</th><th>Técnico</th><th>Propriedade</th><th>Município</th><th>ID Visita</th><th>Mês na visita</th><th>Mês dos lançamentos</th><th>Painel mostra em</th></tr></thead><tbody>` +
     it.map(x => `<tr><td>${esc(x.supervisor) || '<i>sem supervisor</i>'}</td><td>${esc(x.tecnico) || '<i>sem técnico</i>'}</td><td>${esc(x.propriedade)} (${esc(x.id_propriedade)})</td><td>${esc(x.municipio)}</td><td>${esc(x.id_visita)}</td><td>${esc(x.mes_visita)}</td><td>${esc(lanc(x))}</td><td>${esc(x.mes_painel)}</td></tr>`).join('') +
     `</tbody></table></div>`;
@@ -823,7 +823,7 @@ async function conferePlanilha(file){
     let vp = {};   // onde o painel tem cada visita que só aparece na planilha (outro mês, ou nenhum)
     if (soArq.length) { try { const rv = await fetch('/api/visitas_painel?ids=' + soArq.slice(0, 100).map(l => l.visita).join(',')); const dv = rv.ok ? await rv.json() : {}; vp = dv.itens || {}; } catch (e) { vp = {}; } }
     const motivoVisita = l => { const o = vp[l.visita];
-      if (o && o.length) return 'No painel esta visita aparece em ' + o.map(x => x.mes).join(', ') + ' (mês dos lançamentos), e a planilha a mostra em ' + mes + '. Veja a aba Revisar lançamentos ou confira os lançamentos dessa visita no SisATeG.';
+      if (o && o.length) return 'No painel esta visita aparece em ' + o.map(x => x.mes).join(', ') + ', porque é a referência cadastrada na visita. A planilha mostra no mês dos lançamentos (' + mes + '). Corrigir a referência da visita no SisATeG.';
       const q = P0.find(p => p.id === l.id);
       if (q) return 'A propriedade está no painel neste mês com a visita ' + q.id_visita + ', mas esta visita não está: provável visita excluída/inválida ou sem lançamento válido.';
       return 'A visita e a propriedade não aparecem no painel: provável visita excluída no SisATeG, sem lançamento válido, ou propriedade inativa.'; };
