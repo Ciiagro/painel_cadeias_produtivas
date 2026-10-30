@@ -201,6 +201,7 @@
     <h2>Visão macro</h2>
     <div class="macro-ctl">
       <label>Comparar<select id="mmet" autocomplete="off"><option value="rec">Receita bruta</option><option value="prod">Produção</option><option value="vis">Visitas</option><option value="assist">Propriedades assistidas</option></select></label>
+      <label>Mostrar<select id="mgraf" autocomplete="off"><option value="valor">Valor no mês (ranking)</option><option value="cres">Crescimento</option></select></label>
       <label>Agrupar por<select id="mniv" autocomplete="off"><option value="municipio">Município (todos)</option><option value="regiao">Região</option></select></label>
     </div>
     <details class="avanc"><summary>Opções avançadas (região e período de crescimento)</summary>
@@ -452,7 +453,7 @@ async function atualiza(){
 ['proj','sup','tec','mun','reg','prop','sit'].forEach(id => $(id).onchange = async () => { await carregaFiltros(); atualiza(); });
 ['de','ate'].forEach(i=>$(i).onchange = async () => { await carregaFiltros(); atualiza(); });
 $('mreg').onchange = () => { $('reg').value = $('mreg').value; $('reg').onchange(); };
-$('mcad').onchange = carregaMacro; $('mniv').onchange = carregaMacro; $('mmet').onchange = desenhaMacro; $('mper').onchange = desenhaMacro; $('mbase').onchange = desenhaMacro;
+$('mcad').onchange = carregaMacro; $('mniv').onchange = carregaMacro; $('mmet').onchange = desenhaMacro; $('mper').onchange = desenhaMacro; $('mgraf').onchange = desenhaMacro; $('mbase').onchange = desenhaMacro;
 $('btnAtualiza').onclick = async()=>{ await carregaFiltros(); atualiza(); };
 // Excel da tabela mensal: usa exatamente os dados na tela, ou seja, já respeitando todos os filtros
 function baixaExcel(){
@@ -681,8 +682,10 @@ function desenhaMacro(){
   const per = $('mper').value;
   const semLanc = grupos.filter(g => !g.m[met].cur).map(g => g.nome);   // sem lançamento no mês de referência: não é queda, fica fora das barras
   const cres = grupos.filter(g => g.m[met].cur).map(g => ({nome: g.nome, x: g.m[met][per], cur: g.m[met].cur})).filter(z => z.x != null).sort((a, b) => b.x - a.x);
-  const semBase = grupos.filter(g => g.m[met].cur && g.m[met][per] == null).map(g => g.nome);   // lançaram no mês, mas sem propriedade comparável
-  const ncres = cres.length;
+  const semBase = $('mgraf').value === 'valor' ? [] : grupos.filter(g => g.m[met].cur && g.m[met][per] == null).map(g => g.nome);   // lançaram no mês, mas sem propriedade comparável
+  const modoVal = $('mgraf').value === 'valor';
+  const vals = grupos.filter(g => g.m[met].cur).map(g => ({nome: g.nome, cur: g.m[met].cur})).sort((a, b) => b.cur - a.cur);
+  const ncres = modoVal ? vals.length : cres.length;
   // ---- tabela comparativa
   const NM = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
   const mt = m => m ? NM[+m.slice(5) - 1] + '/' + m.slice(2, 4) : '–';
@@ -697,7 +700,7 @@ function desenhaMacro(){
       return macroSort.d * ((x == null ? -1e18 : x) - (y == null ? -1e18 : y)); });
   const sb = (x, m, k) => { if (x != null || !m.cur) return seta(x);
     const t = m[k]; if (t != null) return `<span style="opacity:.6;font-style:italic" title="Nenhuma propriedade lançou nos dois períodos: esta é a variação do TOTAL, com propriedades diferentes">${seta(t)}</span>`;
-    return '<span style="color:var(--mut)" title="Sem lançamento no período anterior (projeto ou propriedades novas): não dá para calcular o crescimento">novo</span>'; };
+    return '<span style="color:var(--mut)" title="Não havia lançamento neste município/região no período anterior, então não dá para calcular o crescimento">sem base</span>'; };
   const linha = (nome, g, b) => `<tr${b ? ' style="font-weight:700;background:var(--suave)"' : ''}><td${!b && nivel === 'região' ? ` class="lnk" data-reg="${nome}" style="cursor:pointer;text-decoration:underline dotted" title="Ver os municípios desta região"` : ''}>${nome}</td><td class="n">${nf.format(g.cad)}</td><td class="n">${nf.format(g.m.props.cur)}</td><td class="n">${nf.format(g.m.assist.cur)}</td>
      <td class="n">${nf.format(g.m.vis.cur)}</td><td class="n">R$ ${nf.format(g.m.rec.cur)}</td><td class="n">${sb(g.m.rec.dMes, g.m.rec, 'tMes')}</td><td class="n">${sb(g.m.rec.dAno, g.m.rec, 'tAno')}</td><td class="n">${sb(g.m.rec.dTri, g.m.rec, 'tTri')}</td>
      ${unid ? `<td class="n">${nf.format(g.m.prod.cur)}</td><td class="n">${sb(g.m.prod.dAno, g.m.prod, 'tAno')}</td>` : ''}</tr>`;
@@ -714,25 +717,58 @@ function desenhaMacro(){
       if (!v(g[met], i)) return cel(null, true);
       return cel(usaLfl && l ? pct(l['12'].cur[i], l['12'].base[i]) : pct(v(g[met], i), v(g[met], i - 12))); }).join('')}</tr>`).join('') +
     `</tbody></table></div>` : '<p class="d-vazio">São necessários pelo menos 13 meses de histórico para comparar com o ano anterior.</p>';
+  const maxV = vals.length ? vals[0].cur : 1, totV = vals.reduce((s, z) => s + z.cur, 0) || 1;
+  const gm = Object.fromEntries(grupos.map(g => [g.nome, g.m[met]]));
+  const rankHtml = `<div class="rolagem" style="max-height:460px">` + vals.map((z, i) => { const m = gm[z.nome], x = m.dAno != null ? m.dAno : m.dMes;
+    const reg = nivel === 'região';
+    return `<div class="rk"${reg ? ` data-reg="${z.nome}" style="cursor:pointer" title="Clique para ver os municípios desta região"` : ''}><div style="display:grid;grid-template-columns:24px minmax(90px,1.2fr) 2fr auto 52px 92px;gap:8px;align-items:center;padding:6px 2px;border-bottom:1px solid var(--linha,#eadfce);font-size:13px">
+      <span style="color:var(--mut)">${i + 1}º</span><b style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${z.nome}">${reg ? '▸ ' : ''}${z.nome}</b>
+      <span style="background:#e9efe9;border-radius:4px;height:8px;display:block"><span style="display:block;height:8px;border-radius:4px;background:#1d6b45;width:${Math.max(2, z.cur / maxV * 100)}%"></span></span>
+      <span style="text-align:right;font-variant-numeric:tabular-nums"><b>${fm(met, z.cur)}</b></span>
+      <span style="text-align:right;color:var(--mut)" title="Participação no total">${fmt(z.cur / totV * 100, 1)}%</span>
+      <span style="text-align:right;white-space:nowrap" title="${m.dAno != null ? 'vs. mesmo mês do ano anterior' : 'vs. mês anterior'}">${x != null ? seta(x) : '<span style="color:var(--mut)">sem base</span>'}</span></div></div><div class="rk-sub" hidden></div>`; }).join('') + `</div>
+    <p class="d-resumo" style="margin-top:6px">Colunas: posição, ${nivel}, valor em ${ref}, participação no total e variação contra o mesmo mês do ano anterior.${nivel === 'região' ? ' <b>Clique numa região para ver os municípios dela.</b>' : ''}</p>`;
+  const volta = $('reg').value ? `<p style="margin:0 0 8px"><button type="button" class="btn mvolta" style="grid-column:auto;padding:6px 12px">← Voltar para todas as regiões</button> <span class="d-resumo">Região atual: <b>${$('reg').value}</b></span></p>` : '';
   box.innerHTML = `<p class="d-resumo">Mês de referência: <b>${ref}</b> (último mês fechado). Por <b>${nivel}</b>${nivel === 'município' ? '' : ' — clique numa região da tabela para ver os municípios'}.</p>${avisos}
     <div class="kpis kpis5" style="margin-bottom:14px">${cards}</div>
     <div class="par2"><div>
-    <h3 class="c-tit">Crescimento de ${MM[met].toLowerCase()} por ${nivel}: ${PERN[$('mper').value]}</h3>
-    <p class="d-resumo">Cada barra é um(a) ${nivel}: ${usaLfl && (met === 'rec' || met === 'prod') ? 'compara só as propriedades que lançaram nos dois meses, para não contar propriedade nova como crescimento.' : 'compara o total de cada mês.'}</p>
+    ${volta}
+    ${modoVal ? `<h3 class="c-tit">${MM[met]} por ${nivel} em ${ref}</h3><p class="d-resumo">Valor de cada ${nivel} no mês de referência, do maior para o menor.</p>` : `<h3 class="c-tit">Crescimento de ${MM[met].toLowerCase()} por ${nivel}: ${PERN[$('mper').value]}</h3>
+    <p class="d-resumo">Cada barra é um(a) ${nivel}: ${usaLfl && (met === 'rec' || met === 'prod') ? 'compara só as propriedades que lançaram nos dois meses, para não contar propriedade nova como crescimento.' : 'compara o total de cada mês.'}</p>`}
     ${semBase.length || semLancRef.length ? `<details class="mini"><summary>Quem não aparece nas barras (${semBase.length + semLancRef.length})</summary>${semBase.length ? `<p><b>Sem propriedade comparável (novas):</b> ${semBase.join(', ')}.</p>` : ''}${semLancRef.length ? `<p><b>Sem lançamento de leite em ${ref} (fora do painel neste mês):</b> ${semLancRef.join(', ')}.</p>` : ''}</details>` : ''}
-    <div class="cv" style="height:${Math.max(300, 22 * ncres + 70)}px"><canvas id="cCres"></canvas></div>
+    ${modoVal ? rankHtml : `<div class="cv" style="height:${Math.max(300, 22 * ncres + 70)}px"><canvas id="cCres"></canvas></div>`}
     </div><div>
     <h3 class="c-tit">Evolução de ${MM[met].toLowerCase()} por ${nivel}</h3>
     <p class="d-resumo">Os 8 maiores no período De/Até.</p>
     <div class="cv" style="height:${Math.max(300, Math.min(22 * ncres + 70, 520))}px"><canvas id="cMacro"></canvas></div>
     </div></div>
+    ${volta}
     <h3 class="c-tit">Tabela comparativa (clique no título da coluna para ordenar)</h3>
-    <p class="d-resumo">Cada coluna de variação diz contra qual período compara. Só entram as propriedades que lançaram nos dois períodos; em <i>cinza itálico</i> está a variação do total quando nenhuma propriedade se repete, e <b>novo</b> quando não havia lançamento antes. O mês de referência é o campo <b>Até</b>.</p>${tabela}
+    <p class="d-resumo">Cada coluna de variação diz contra qual período compara. Só entram as propriedades que lançaram nos dois períodos; em <i>cinza itálico</i> está a variação do total quando nenhuma propriedade se repete, e <b>sem base</b> quando não havia lançamento antes. O mês de referência é o campo <b>Até</b>.</p>${tabela}
     <details class="mini"><summary><b>Ver mapa de calor</b> (${MM[met].toLowerCase()} contra o mesmo mês do ano anterior, últimos 12 meses)</summary>
     <p class="d-resumo">Verde = cresceu, vermelho = caiu em relação ao mesmo mês do ano anterior (intensidade até ±50%). Cinza com “–” = sem lançamento no mês (não é queda de 100%).${usaLfl && (met === 'rec' || met === 'prod') ? ' Comparação só com as propriedades que lançaram nos dois meses.' : ''}${grupos.length > 40 ? ' Mostra os 40 maiores em ' + ref + '.' : ''}</p>${hm}</details>`;
+  box.querySelectorAll('.rk[data-reg]').forEach(row => row.onclick = async () => {
+    const sub = row.nextElementSibling, nm = row.dataset.reg;
+    if (!sub.hidden) { sub.hidden = true; row.querySelector('b').textContent = '▸ ' + nm; return; }
+    row.querySelector('b').textContent = '▾ ' + nm; sub.hidden = false; sub.innerHTML = '<p class="d-vazio">Carregando municípios…</p>';
+    try {
+      const q = new URLSearchParams({cadeia: $('mcad').value, nivel: 'municipio', regiao: nm, situacao: $('sit').value, ate: $('ate').value});
+      for (const [k, v] of [...q]) if (!v) q.delete(k);
+      const r = await fetch('/api/macro?' + q), dm = await r.json(), ix = dm.meses.indexOf(ref);
+      const L = (dm.grupos || []).map(g => ({nome: g.nome, cur: ix >= 0 ? (g[met][ix] || 0) : 0})).filter(z => z.cur).sort((a, b) => b.cur - a.cur);
+      const tt = L.reduce((s, z) => s + z.cur, 0) || 1, mx = L.length ? L[0].cur : 1;
+      sub.innerHTML = L.length ? L.map((z, i) => `<div style="display:grid;grid-template-columns:24px minmax(90px,1.2fr) 2fr auto 52px;gap:8px;align-items:center;padding:4px 2px 4px 22px;background:#f7faf7;border-bottom:1px solid var(--linha,#eadfce);font-size:12.5px">
+        <span style="color:var(--mut)">${i + 1}º</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${z.nome}">${z.nome}</span>
+        <span style="background:#e9efe9;border-radius:4px;height:6px;display:block"><span style="display:block;height:6px;border-radius:4px;background:#5d9b7a;width:${Math.max(2, z.cur / mx * 100)}%"></span></span>
+        <span style="text-align:right;font-variant-numeric:tabular-nums">${fm(met, z.cur)}</span><span style="text-align:right;color:var(--mut)" title="Participação na região">${fmt(z.cur / tt * 100, 1)}%</span></div>`).join('')
+        : '<p class="d-vazio">Nenhum município com lançamento em ' + ref + '.</p>';
+    } catch(e) { sub.innerHTML = '<p class="d-vazio">Não consegui carregar os municípios: ' + e.message + '</p>'; }
+  });
+  box.querySelectorAll('.mvolta').forEach(b => b.onclick = () => { $('mniv').value = 'regiao'; $('reg').value = ''; $('reg').onchange(); });
+  box.querySelectorAll('.mvolta').forEach(b => b.onclick = () => { $('mniv').value = 'regiao'; $('reg').value = ''; $('reg').onchange(); });
   box.querySelectorAll('td.lnk').forEach(td => td.onclick = () => { $('reg').value = td.dataset.reg; $('reg').onchange(); });
   box.querySelectorAll('th[data-mk]').forEach(th => th.onclick = () => { const k = th.dataset.mk; macroSort = {k, d: macroSort.k === k ? -macroSort.d : (k === 'nome' ? 1 : -1)}; desenhaMacro(); });
-  if (ncres) charts.cc = new Chart($('cCres'), {type: 'bar',
+  if (!modoVal && ncres) charts.cc = new Chart($('cCres'), {type: 'bar',
     data: {labels: cres.map(z => z.nome), datasets: [{data: cres.map(z => Math.max(-300, Math.min(300, z.x))), backgroundColor: cres.map(z => z.x >= 0 ? '#1d6b45' : '#b3261e'), borderRadius: 3}]},
     options: {indexAxis: 'y', maintainAspectRatio: false, animation: reduz ? false : undefined,
       plugins: {legend: {display: false}, tooltip: {callbacks: {label: c => (cres[c.dataIndex].x > 0 ? '+' : '') + fmt(cres[c.dataIndex].x, 1) + '%  (atual: ' + fm(met, cres[c.dataIndex].cur) + ')'}}},
