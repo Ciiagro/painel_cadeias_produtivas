@@ -95,13 +95,21 @@ CREATE TEMP TABLE tmp_visitas_invalidas AS
   WHERE dt_exclusao_visita IS NOT NULL;
 CREATE INDEX ON tmp_visitas_invalidas (id);
 ANALYZE tmp_visitas_invalidas;
+-- Visitas cuja REFERÊNCIA é do período do painel (lista pequena e indexada, para a consulta abaixo não ficar lenta)
+DROP TABLE IF EXISTS tmp_ref_visita;
+CREATE TEMP TABLE tmp_ref_visita AS
+  SELECT DISTINCT id_visita::text AS id FROM public.sisateg_rel_listar_visita
+  WHERE referencia_visita ~ '^[0-9]{4}-[0-9]{2}$' AND referencia_visita >= '2024-06';
+CREATE INDEX ON tmp_ref_visita (id);
+ANALYZE tmp_ref_visita;
 
 -- Filtra a tabela grande UMA vez só; os 3 resumos abaixo usam esta cópia menor (bem mais rápido)
 DROP TABLE IF EXISTS tmp_base;
 CREATE TEMP TABLE tmp_base AS
 SELECT r.* FROM public.sisateg_receita_despesa r
 WHERE r.atividade = 'BOVINOCULTURA DE LEITE' AND r.status_item = 'ATIVO' AND r.tipo_registro = 'PRINCIPAL'
-  AND r.dt_referencia >= DATE '2024-06-01' AND r.dt_referencia < CURRENT_DATE + 1
+  AND (r.dt_referencia >= DATE '2024-06-01' OR EXISTS (SELECT 1 FROM tmp_ref_visita tr WHERE tr.id = r.id_visita::text))   -- item com data antiga entra se a REFERÊNCIA da visita é do período do painel
+  AND r.dt_referencia < CURRENT_DATE + 1
   AND NOT EXISTS (SELECT 1 FROM tmp_visitas_invalidas iv WHERE iv.id = r.id_visita::text)
   AND r.id_propriedade IN (SELECT id_propriedade FROM public.resumo_propriedades);
 CREATE INDEX ON tmp_base (id_visita, id_item);
@@ -111,7 +119,8 @@ INSERT INTO tmp_base
 SELECT r.* FROM public.sisateg_receita_despesa r
 WHERE r.atividade = 'BOVINOCULTURA DE LEITE' AND r.status_item = 'ATIVO' AND r.tipo_registro = 'DETALHADO'
   AND r.tipo_valor = 'VALOR_UNITARIO' AND r.valor IS NOT NULL
-  AND r.dt_referencia >= DATE '2024-06-01' AND r.dt_referencia < CURRENT_DATE + 1
+  AND (r.dt_referencia >= DATE '2024-06-01' OR EXISTS (SELECT 1 FROM tmp_ref_visita tr WHERE tr.id = r.id_visita::text))   -- item com data antiga entra se a REFERÊNCIA da visita é do período do painel
+  AND r.dt_referencia < CURRENT_DATE + 1
   AND NOT EXISTS (SELECT 1 FROM tmp_visitas_invalidas iv WHERE iv.id = r.id_visita::text)
   AND r.id_propriedade IN (SELECT id_propriedade FROM public.resumo_propriedades)
   AND EXISTS (SELECT 1 FROM tmp_base q WHERE q.id_visita = r.id_visita AND q.id_item = r.id_item AND q.dt_referencia = r.dt_referencia AND q.tipo_valor = 'QUANTIDADE')
@@ -121,7 +130,7 @@ UPDATE tmp_base SET tipo_registro = 'PRINCIPAL' WHERE tipo_registro = 'DETALHADO
 UPDATE tmp_base b SET dt_referencia = to_date(lv.referencia_visita || '-01', 'YYYY-MM-DD')
 FROM public.sisateg_rel_listar_visita lv
 WHERE lv.id_visita::text = b.id_visita::text AND lv.referencia_visita ~ '^[0-9]{4}-[0-9]{2}$'
-  AND ABS(to_date(lv.referencia_visita || '-01', 'YYYY-MM-DD') - b.dt_referencia::date) <= 366;   -- referência muito distante da data do item (ex.: visita de 2023 editada em 2026) é ignorada
+  AND (to_date(lv.referencia_visita || '-01', 'YYYY-MM-DD') - b.dt_referencia::date) >= -366;   -- vale a referência da visita, mesmo que os itens tenham data bem mais antiga (item copiado de visita velha). Só é ignorada se a referência for MAIS DE 1 ANO ANTES do item (ex.: visita de 2023 editada em 2026)
 -- Visita SEM referência válida: o mês dela passa a ser o mais recente entre os itens dela
 UPDATE tmp_base b SET dt_referencia = m.mx
 FROM (SELECT b2.id_visita, MAX(b2.dt_referencia) AS mx
@@ -317,7 +326,7 @@ CREATE INDEX ON public.resumo_tipo (id_propriedade, mes);
 
 -- ---------------------------------------------------------------------
 -- Visitas para REVISAR: a referência cadastrada na visita (mês) é diferente do mês dos lançamentos.
--- O SisATeG/planilha conta o mês dos lançamentos; o painel usa a referência da visita (se estiver a até 1 ano de distância).
+-- O SisATeG/planilha conta o mês dos lançamentos; o painel usa a referência da visita (exceto se ela for mais de 1 ano ANTES dos lançamentos).
 -- Assim a visita aparece em meses diferentes na planilha e no painel. A correção é no SisATeG (técnico).
 DROP TABLE IF EXISTS public.resumo_leite_revisar;
 CREATE TABLE public.resumo_leite_revisar AS
@@ -326,12 +335,12 @@ SELECT r.id_visita::text AS id_visita, r.id_propriedade,
        MAX(NULLIF(lv.tecnico_atual, '')) AS tecnico, replace(MAX(NULLIF(lv.supervisor_atual, '')), '&#65533;', '') AS supervisor_visita,
        lv.referencia_visita AS mes_visita,
        to_char(MIN(r.dt_referencia), 'YYYY-MM') AS mes_lanc_de, to_char(MAX(r.dt_referencia), 'YYYY-MM') AS mes_lanc_ate,
-       CASE WHEN ABS(to_date(lv.referencia_visita || '-01', 'YYYY-MM-DD') - MIN(r.dt_referencia)::date) <= 366
+       CASE WHEN (to_date(lv.referencia_visita || '-01', 'YYYY-MM-DD') - MIN(r.dt_referencia)::date) >= -366
             THEN lv.referencia_visita ELSE to_char(MIN(r.dt_referencia), 'YYYY-MM') END AS mes_painel
 FROM public.sisateg_receita_despesa r
 JOIN public.sisateg_rel_listar_visita lv ON lv.id_visita::text = r.id_visita::text
 WHERE r.atividade = 'BOVINOCULTURA DE LEITE' AND r.status_item = 'ATIVO' AND r.tipo_registro = 'PRINCIPAL'
-  AND r.dt_referencia >= DATE '2024-06-01' AND r.dt_referencia < CURRENT_DATE + 1
+  AND (r.dt_referencia >= DATE '2024-06-01' OR lv.referencia_visita >= '2024-06') AND r.dt_referencia < CURRENT_DATE + 1
   AND lv.dt_exclusao_visita IS NULL
   AND lv.referencia_visita ~ '^[0-9]{4}-[0-9]{2}$'
   AND to_char(r.dt_referencia, 'YYYY-MM') <> lv.referencia_visita
