@@ -143,6 +143,13 @@ def main():
     dias = DIAS_RAPIDO if rapido else DIAS
     ini = (date.today() - timedelta(days=dias)).replace(day=1).isoformat()
     desde = None
+    if "--meses" in sys.argv:   # recarrega os últimos N meses (pega itens lançados depois em meses recentes); o mesmo que --desde no dia 1 de N meses atrás
+        n = int(sys.argv[sys.argv.index("--meses") + 1])
+        ano, mes = date.today().year, date.today().month - n
+        while mes < 1:
+            mes += 12
+            ano -= 1
+        sys.argv += ["--desde", date(ano, mes, 1).isoformat()]
     if "--desde" in sys.argv:   # recarrega a história da fonte a partir de uma data (pega itens lançados depois em meses antigos); recalcula tudo
         desde = sys.argv[sys.argv.index("--desde") + 1]
         date.fromisoformat(desde)
