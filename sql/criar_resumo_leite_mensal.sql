@@ -126,6 +126,13 @@ WHERE r.atividade = 'BOVINOCULTURA DE LEITE' AND r.status_item = 'ATIVO' AND r.t
   AND EXISTS (SELECT 1 FROM tmp_base q WHERE q.id_visita = r.id_visita AND q.id_item = r.id_item AND q.dt_referencia = r.dt_referencia AND q.tipo_valor = 'QUANTIDADE')
   AND NOT EXISTS (SELECT 1 FROM tmp_base p WHERE p.id_visita = r.id_visita AND p.id_item = r.id_item AND p.dt_referencia = r.dt_referencia AND p.tipo_valor = 'VALOR_UNITARIO');
 UPDATE tmp_base SET tipo_registro = 'PRINCIPAL' WHERE tipo_registro = 'DETALHADO';   -- (só as linhas de preço acrescentadas acima eram detalhadas)
+-- Linha REPETIDA na mesma visita (sobra de edição no SisATeG: a linha antiga não é cancelada e a nova é criada): conta UMA só, a de alteração mais recente.
+-- (A planilha do SisATeG soma as duas e ainda soma os preços, por isso sai maior que o painel nessas visitas.)
+DELETE FROM tmp_base b USING (
+  SELECT ctid AS c, ROW_NUMBER() OVER (PARTITION BY id_visita, id_item, tipo_valor, tipo_registro, dt_referencia
+                                       ORDER BY dt_alteracao_item DESC NULLS LAST, id_item_visita DESC NULLS LAST) AS rn
+  FROM tmp_base) d
+WHERE b.ctid = d.c AND d.rn > 1;
 -- O mês de cada visita é o da REFERÊNCIA DA VISITA (é assim que a planilha do SisATeG conta); a data do item só vale se a visita não tiver referência
 UPDATE tmp_base b SET dt_referencia = to_date(lv.referencia_visita || '-01', 'YYYY-MM-DD')
 FROM public.sisateg_rel_listar_visita lv
