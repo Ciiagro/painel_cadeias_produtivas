@@ -865,10 +865,13 @@ async function conferePlanilha(file){
     const tiposD = d.tipos || {};
     const rotClasse = {'Outras despesas': ' [fora da despesa direta]', 'Aleitamento (fora do total)': ' [fora do total]', 'Fora das despesas': ' [empréstimo/investimento: fora]', 'Fora da receita bruta': ' [fora da receita bruta]'};
     const linhaTipo = (L, g) => L.filter(t => t[0] === g).map(t => `${t[2]} ${R(t[3])}${rotClasse[t[1]] ?? ''}`).join('; ') || 'nenhum lançamento';
+    const dupLeite = x => { const razao = x.p.recC > 0 ? x.a.rec / x.p.recC : 0; return Math.abs(x.dp) <= 1 && razao >= 1.95 && razao <= 2.05; };   // planilha ≈ 2× o painel, com a mesma produção: o SisATeG dobra o preço quando um item de leite aparece 2× na visita
+    const expl = dif.filter(dupLeite), eDr = expl.reduce((s, x) => s + x.dr, 0), eDd = expl.reduce((s, x) => s + x.dd, 0);
+    const resR = soma(P, 'recC') - soma(A, 'rec') - eDr, resD = soma(P, 'desp') - soma(A, 'desp') - eDd;
+    const nota = expl.length ? `<p class="d-resumo" style="max-width:760px"><b>${expl.length} visita(s)</b> têm item de leite lançado em 2 linhas: o SisATeG dobra o preço e a planilha sai maior (receita ${R(eDr)}, despesa ${R(eDd)}). O painel soma as linhas como foram lançadas. <b>Diferença restante, sem essas visitas: receita ${R(resR)} e despesa ${R(resD)}</b>${Math.abs(resR) <= 1 && Math.abs(resD) <= 1 ? ' — <span class="pos"><b>o resto bate</b></span>' : ''}.</p>` : '';
     const oQue = (p, x) => {
       const L = tiposD[p.id] || [], partes = [];
-      const razao = p.recC > 0 ? x.a.rec / p.recC : 0;   // planilha ≈ 2× o painel, com a mesma produção: o SisATeG dobra o preço quando um item de leite aparece 2× na visita
-      if (Math.abs(x.dp) <= 1 && razao >= 1.95 && razao <= 2.05) partes.push('PROVÁVEL ITEM DE LEITE LANÇADO 2× NA VISITA: o SisATeG soma os preços e a receita da planilha sai em dobro (planilha ≈ 2× o painel, mesma produção). O painel está correto.');
+      if (dupLeite(x)) partes.push('PROVÁVEL ITEM DE LEITE LANÇADO 2× NA VISITA: o SisATeG soma os preços e a receita da planilha sai em dobro (planilha ≈ 2× o painel, mesma produção). O painel está correto.');
       if (Math.abs(x.dr) > 1) partes.push('Receita no painel: ' + linhaTipo(L, 'Receita'));
       if (Math.abs(x.dd) > 1) partes.push('Despesa no painel: ' + linhaTipo(L, 'Despesa'));
       if (Math.abs(x.dp) > 1) partes.push(`Produção: painel ${nf.format(Math.round(p.prod))} L x planilha ${nf.format(Math.round(x.a.prod))} L`);
@@ -888,6 +891,7 @@ async function conferePlanilha(file){
     box.innerHTML = `${aviso}<p class="d-resumo"><b>Mês conferido: ${mes}</b> — ${ok ? '<span class="pos"><b>tudo bate com o painel</b></span>' : '<span class="neg"><b>há diferenças</b></span>'}</p>
       <div class="d-bloco" style="max-width:760px;margin-bottom:14px"><h3>Totais</h3><table class="t-simples"><thead><tr><th></th><th class="n">Planilha</th><th class="n">Painel</th><th class="n">Diferença</th></tr></thead><tbody>
         ${lin('Receitas (receita bruta + venda de bem e empréstimo)', 'rec', R, 'recC')}${lin('Despesas diretas', 'desp', R)}${lin('Produção de leite', 'prod', L)}</tbody></table></div>
+      ${nota}
       <div class="d-bloco" style="max-width:760px;margin-bottom:14px"><h3>Visitas (casadas pelo ID da Visita)</h3>
         ${cnt('Na planilha', A.length)}${cnt('No painel (propriedades neste mês)', P.length)}${cnt('Com valor diferente', dif.length, dif.length ? 'neg' : 'pos')}
         ${cnt('Só na planilha (faltam no painel)', soArq.length, soArq.length ? 'neg' : 'pos')}${soZero.length ? cnt('Visitas sem lançamento de leite (esperado, não entram no painel)', soZero.length, '') : ''}${cnt('Só no painel (não estão na planilha)', soPan.length, soPan.length ? 'neg' : 'pos')}</div>
