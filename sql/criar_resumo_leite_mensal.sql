@@ -93,6 +93,17 @@ DROP TABLE IF EXISTS tmp_visitas_invalidas;
 CREATE TEMP TABLE tmp_visitas_invalidas AS
   SELECT DISTINCT id_visita::text AS id FROM public.sisateg_rel_listar_visita
   WHERE dt_exclusao_visita IS NOT NULL;
+-- Visitas "gemeas" de 2025 e anteriores: o SisATeG refez a visita com outro ID (mesma propriedade, mesmo mes de referencia e mesmo numero_visita) e deixou a antiga no cadastro.
+-- A planilha traz so a mais nova (maior id_visita); a antiga some da conta para nao somar duas vezes. Vale so para referencia anterior a 2026-01
+-- (em 2026 ha propriedades com 2 visitas legitimas no mesmo mes, e a planilha traz as duas).
+INSERT INTO tmp_visitas_invalidas
+  SELECT t.id FROM (
+    SELECT id_visita::text AS id,
+           ROW_NUMBER() OVER (PARTITION BY id_propriedade, referencia_visita, numero_visita ORDER BY id_visita::bigint DESC) AS rn
+    FROM public.sisateg_rel_listar_visita
+    WHERE atividade = 'BOVINOCULTURA DE LEITE' AND dt_exclusao_visita IS NULL
+      AND referencia_visita ~ '^[0-9]{4}-[0-9]{2}$' AND referencia_visita < '2026-01' AND numero_visita IS NOT NULL
+  ) t WHERE t.rn > 1;
 CREATE INDEX ON tmp_visitas_invalidas (id);
 ANALYZE tmp_visitas_invalidas;
 -- Visitas cuja REFERÊNCIA é do período do painel (lista pequena e indexada, para a consulta abaixo não ficar lenta)
