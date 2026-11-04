@@ -201,6 +201,16 @@ def serie(supervisor: str | None = None, tecnico: str | None = None, propriedade
     except Exception as ex:
         print("AVISO: vw_propriedade_mes indisponivel no servidor (rode transferir_resumo.py):", str(ex).splitlines()[0])
         props_mes = {}
+    # Filtro "Só inativas": a série para no último mês em que elas lançaram (ex.: 2026-05) e os cartões mostravam outro mês
+    # que os demais filtros. Completa com meses zerados até o último mês da base, para os cartões ficarem no mesmo mês.
+    if situacao == "inativa" and rows:
+        with engine.connect() as con:
+            cpad = " AND mes <= :ate" if ate else ""
+            meses_base = [r[0] for r in con.execute(text(f"SELECT DISTINCT mes FROM {TABLE} WHERE mes > :ult{cpad} ORDER BY mes"),
+                                                    {"ult": rows[-1]["mes"], **({"ate": ate} if ate else {})})]
+        for mm in meses_base:
+            rows.append({"mes": mm, "propriedades": 0, "producao": 0, "receita_bruta": 0, "venda_leite": 0,
+                         "despesa_direta": 0, "margem_bruta": 0, "margem_leite": 0, "produtores": 0})
     for r in rows:
         r["propriedades_total"] = int(total_props or 0)
         r["propriedades_ativas_mes"] = props_mes.get(r["mes"])
