@@ -9,6 +9,7 @@ DROP VIEW IF EXISTS public.vw_leite_revisar;
 DROP VIEW IF EXISTS public.vw_tipo;
 DROP VIEW IF EXISTS public.vw_despesa_subgrupo;
 DROP VIEW IF EXISTS public.vw_resumo_leite_mensal;
+DROP VIEW IF EXISTS public.vw_propriedade_mes;
 DROP VIEW IF EXISTS public.vw_propriedades CASCADE;
 CREATE VIEW public.vw_propriedades AS
 SELECT p.id_propriedade, p.propriedade, p.produtor, p.tecnico,
@@ -22,6 +23,12 @@ LEFT JOIN LATERAL (
   WHERE r.nome_norm = upper(regexp_replace(btrim(translate(p.municipio,
         'ÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇáàâãäéèêëíìîïóòôõöúùûüç', 'AAAAAEEEEIIIIOOOOOUUUUCaaaaaeeeeiiiiooooouuuuc')), '\s+', ' ', 'g'))
   ORDER BY r.cod_ibge LIMIT 1) mr ON TRUE;
+
+-- Propriedades com visita de leite em cada mes (cartao "Propriedades ativas"): mesmas colunas de filtro.
+CREATE VIEW public.vw_propriedade_mes AS
+SELECT v.id_propriedade, v.tecnico, v.supervisor, v.projeto, v.municipio, v.regiao, v.ativa, m.mes
+FROM public.vw_propriedades v
+JOIN public.resumo_propriedade_mes m ON m.id_propriedade = v.id_propriedade;
 
 -- Mensal: o técnico e o supervisor são os da ÉPOCA (da visita do mês); se faltar, usa o último supervisor do técnico e depois o da propriedade.
 CREATE VIEW public.vw_resumo_leite_mensal AS

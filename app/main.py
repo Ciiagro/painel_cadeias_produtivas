@@ -179,8 +179,20 @@ def serie(supervisor: str | None = None, tecnico: str | None = None, propriedade
                 FROM {TABLE} WHERE {' AND '.join(where)} AND leite_vendido_l > 0 GROUP BY mes, id_propriedade"""), p).mappings():
             if r["l"] and float(r["l"]) > 0 and r["rs"] is not None:
                 preco_mes.setdefault(r["mes"], []).append(float(r["rs"]) / float(r["l"]))
+    # Cartão "Propriedades ativas": propriedades com visita de leite NO MÊS (regra do SisATeG).
+    # Se a view ainda não existir no servidor, cai para o total de ativas de hoje.
+    props_mes = {}
+    try:
+        with engine.connect() as con:
+            wm, pm = _where(supervisor, tecnico, projeto, propriedade, None, municipio, regiao)
+            wm.append("NOT ativa" if situacao == "inativa" else "ativa")
+            for rr in con.execute(text(f"SELECT mes, COUNT(DISTINCT id_propriedade) AS n FROM public.vw_propriedade_mes WHERE {' AND '.join(wm)} GROUP BY mes"), pm):
+                props_mes[rr[0]] = int(rr[1])
+    except Exception:
+        props_mes = {}
     for r in rows:
         r["propriedades_total"] = int(total_props or 0)
+        r["propriedades_ativas_mes"] = props_mes.get(r["mes"])
         ps = preco_mes.get(r["mes"])
         r["preco_medio"] = round(sum(ps) / len(ps), 4) if ps else None
     prev = None

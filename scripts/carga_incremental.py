@@ -48,6 +48,7 @@ def main():
     ap.add_argument("tabela")
     ap.add_argument("--dias", type=int, default=120, help="janela móvel em dias (padrão 120)")
     ap.add_argument("--desde", help="YYYY-MM-DD: sobrescreve a janela")
+    ap.add_argument("--ate", help="YYYY-MM-DD: data final (exclusiva) da janela; use junto de --desde para recarregar só um trecho antigo")
     ap.add_argument("--forcar", action="store_true", help="ignora a trava (API devolveu menos de 50%% do que já há na janela)")
     a = ap.parse_args()
     if not a.tabela.replace("_", "").isalnum():
@@ -55,7 +56,7 @@ def main():
 
     t0 = time.time()
     ini = a.desde or (date.today() - timedelta(days=a.dias)).replace(day=1).isoformat()  # começa no dia 1 do mês
-    fim = (date.today() + timedelta(days=1)).isoformat()
+    fim = a.ate or (date.today() + timedelta(days=1)).isoformat()
     tmp = f"{a.tabela}__carga_tmp"
     print(f"Tabela {a.tabela}: recarregando {COLUNA_DATA} de {ini} até {fim}")
 
@@ -111,12 +112,12 @@ def main():
     with pg.begin() as con:
         existe = con.execute(text("SELECT to_regclass(:t)"), {"t": f"public.{a.tabela}"}).scalar()
         if existe:
-            antes = con.execute(text(f'SELECT COUNT(*) FROM "{a.tabela}" WHERE {COLUNA_DATA} >= :i'), {"i": ini}).scalar()
+            antes = con.execute(text(f'SELECT COUNT(*) FROM "{a.tabela}" WHERE {COLUNA_DATA} >= :i AND {COLUNA_DATA} < :f'), {"i": ini, "f": fim}).scalar()
             if antes and total < 0.5 * antes and not a.forcar:
                 con.execute(text(f'DROP TABLE IF EXISTS "{tmp}"'))
                 sys.exit(f"TRAVA: a API devolveu {total} linhas e o banco tem {antes} na janela. Nada foi trocado "
                          f"(confira a conexão/ODBC; se for mesmo isso, rode com --forcar).")
-            apagadas = con.execute(text(f'DELETE FROM "{a.tabela}" WHERE {COLUNA_DATA} >= :i'), {"i": ini}).rowcount
+            apagadas = con.execute(text(f'DELETE FROM "{a.tabela}" WHERE {COLUNA_DATA} >= :i AND {COLUNA_DATA} < :f'), {"i": ini, "f": fim}).rowcount
             con.execute(text(f'INSERT INTO "{a.tabela}" ({cols}) SELECT {cols} FROM "{tmp}"'))
             con.execute(text(f'DROP TABLE "{tmp}"'))
             print(f"Janela trocada: {apagadas} linhas antigas -> {total} novas.")

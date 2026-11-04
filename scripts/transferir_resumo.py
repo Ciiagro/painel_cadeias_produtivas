@@ -61,6 +61,7 @@ def main():
         copiar(origem, con, "resumo_despesa_subgrupo", ["id_propriedade", "mes"])
         copiar(origem, con, "resumo_tipo", ["id_propriedade", "mes"])
         copiar(origem, con, "resumo_leite_revisar", ["id_propriedade"], permite_vazia=True)
+        copiar(origem, con, "resumo_propriedade_mes", ["id_propriedade", "mes"], permite_vazia=True)
         con.exec_driver_sql(sql.replace("%", "%%"))
     print("Copia concluida e views recriadas no servidor.")
 

@@ -125,14 +125,9 @@ WHERE r.atividade = 'BOVINOCULTURA DE LEITE' AND r.status_item = 'ATIVO' AND r.t
   AND r.id_propriedade IN (SELECT id_propriedade FROM public.resumo_propriedades)
   AND EXISTS (SELECT 1 FROM tmp_base q WHERE q.id_visita = r.id_visita AND q.id_item = r.id_item AND q.dt_referencia = r.dt_referencia AND q.tipo_valor = 'QUANTIDADE')
   AND NOT EXISTS (SELECT 1 FROM tmp_base p WHERE p.id_visita = r.id_visita AND p.id_item = r.id_item AND p.dt_referencia = r.dt_referencia AND p.tipo_valor = 'VALOR_UNITARIO');
-UPDATE tmp_base SET tipo_registro = 'PRINCIPAL' WHERE tipo_registro = 'DETALHADO';   -- (só as linhas de preço acrescentadas acima eram detalhadas)
--- Linha REPETIDA na mesma visita (sobra de edição no SisATeG: a linha antiga não é cancelada e a nova é criada): conta UMA só, a de alteração mais recente.
--- (A planilha do SisATeG soma as duas e ainda soma os preços, por isso sai maior que o painel nessas visitas.)
-DELETE FROM tmp_base b USING (
-  SELECT ctid AS c, ROW_NUMBER() OVER (PARTITION BY id_visita, id_item, tipo_valor, tipo_registro, dt_referencia
-                                       ORDER BY dt_alteracao_item DESC NULLS LAST, id_item_visita DESC NULLS LAST) AS rn
-  FROM tmp_base) d
-WHERE b.ctid = d.c AND d.rn > 1;
+UPDATE tmp_base SET tipo_registro = 'PRINCIPAL' WHERE tipo_registro = 'DETALHADO';
+-- Itens com data ANTERIOR a 2024-06 de visitas cuja REFERENCIA e do periodo do painel (item copiado de visita antiga): nao estao na tabela combinada, entram direto das tabelas brutas
+DO $$ DECLARE sel text; tb text; BEGIN SELECT string_agg('r.' || quote_ident(attname) || '::' || format_type(atttypid, atttypmod), ', ' ORDER BY attnum) INTO sel FROM pg_attribute WHERE attrelid = 'tmp_base'::regclass AND attnum > 0 AND NOT attisdropped; FOREACH tb IN ARRAY ARRAY['sisateg_receita','sisateg_despesa'] LOOP EXECUTE 'INSERT INTO tmp_base SELECT ' || sel || ' FROM public.' || quote_ident(tb) || ' r WHERE r.atividade = ''BOVINOCULTURA DE LEITE'' AND r.status_item = ''ATIVO'' AND r.tipo_registro = ''PRINCIPAL'' AND r.dt_referencia < DATE ''2024-06-01'' AND EXISTS (SELECT 1 FROM tmp_ref_visita tr WHERE tr.id = r.id_visita::text) AND NOT EXISTS (SELECT 1 FROM tmp_visitas_invalidas iv WHERE iv.id = r.id_visita::text) AND r.id_propriedade IN (SELECT id_propriedade FROM public.resumo_propriedades) AND NOT EXISTS (SELECT 1 FROM tmp_base b WHERE b.id_item_visita = r.id_item_visita AND b.tipo_valor = r.tipo_valor)'; END LOOP; END $$;   -- (só as linhas de preço acrescentadas acima eram detalhadas)
 -- O mês de cada visita é o da REFERÊNCIA DA VISITA (é assim que a planilha do SisATeG conta); a data do item só vale se a visita não tiver referência
 UPDATE tmp_base b SET dt_referencia = to_date(lv.referencia_visita || '-01', 'YYYY-MM-DD')
 FROM public.sisateg_rel_listar_visita lv
@@ -354,6 +349,15 @@ WHERE r.atividade = 'BOVINOCULTURA DE LEITE' AND r.status_item = 'ATIVO' AND r.t
   AND r.id_propriedade IN (SELECT id_propriedade FROM public.resumo_propriedades)
 GROUP BY r.id_visita::text, r.id_propriedade, lv.referencia_visita;
 CREATE INDEX ON public.resumo_leite_revisar (id_propriedade);
+
+-- Propriedades com visita de LEITE (nao excluida) em cada mes de referencia: e a regra do SisATeG para "propriedade do mes" na planilha mensal
+DROP TABLE IF EXISTS public.resumo_propriedade_mes;
+CREATE TABLE public.resumo_propriedade_mes AS
+SELECT DISTINCT p.id_propriedade, lv.referencia_visita::text AS mes
+FROM public.sisateg_rel_listar_visita lv
+JOIN public.resumo_propriedades p ON p.id_propriedade::text = lv.id_propriedade::text
+WHERE lv.atividade = 'BOVINOCULTURA DE LEITE' AND lv.dt_exclusao_visita IS NULL AND lv.referencia_visita >= '2024-06';
+CREATE INDEX ON public.resumo_propriedade_mes (id_propriedade, mes);
 
 ANALYZE public.resumo_propriedades;
 ANALYZE public.resumo_leite_mensal;
