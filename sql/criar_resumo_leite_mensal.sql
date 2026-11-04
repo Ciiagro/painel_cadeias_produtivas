@@ -29,7 +29,7 @@ WITH ativas AS (  -- propriedades ATIVAS que têm vínculo ATIVO de LEITE
 leite_ids AS (  -- toda propriedade que já lançou leite (ativa ou não) desde o início da base
   SELECT DISTINCT id_propriedade FROM public.sisateg_receita_despesa
   WHERE atividade = 'BOVINOCULTURA DE LEITE' AND status_item = 'ATIVO' AND tipo_registro = 'PRINCIPAL'
-    AND dt_referencia >= DATE '2024-06-01'
+    AND dt_referencia >= DATE '2024-01-01'
 ),
 todas AS (  -- ativas + inativas que têm leite lançado (ativa = TRUE/FALSE)
   SELECT id_propriedade, produtor, tecnico_a, supervisor_a, TRUE AS ativa FROM ativas
@@ -110,7 +110,7 @@ ANALYZE tmp_visitas_invalidas;
 DROP TABLE IF EXISTS tmp_ref_visita;
 CREATE TEMP TABLE tmp_ref_visita AS
   SELECT DISTINCT id_visita::text AS id FROM public.sisateg_rel_listar_visita
-  WHERE referencia_visita ~ '^[0-9]{4}-[0-9]{2}$' AND referencia_visita >= '2024-06';
+  WHERE referencia_visita ~ '^[0-9]{4}-[0-9]{2}$' AND referencia_visita >= '2024-01';
 CREATE INDEX ON tmp_ref_visita (id);
 ANALYZE tmp_ref_visita;
 
@@ -119,7 +119,7 @@ DROP TABLE IF EXISTS tmp_base;
 CREATE TEMP TABLE tmp_base AS
 SELECT r.* FROM public.sisateg_receita_despesa r
 WHERE r.atividade = 'BOVINOCULTURA DE LEITE' AND r.status_item = 'ATIVO' AND r.tipo_registro = 'PRINCIPAL'
-  AND (r.dt_referencia >= DATE '2024-06-01' OR EXISTS (SELECT 1 FROM tmp_ref_visita tr WHERE tr.id = r.id_visita::text))   -- item com data antiga entra se a REFERÊNCIA da visita é do período do painel
+  AND (r.dt_referencia >= DATE '2024-01-01' OR EXISTS (SELECT 1 FROM tmp_ref_visita tr WHERE tr.id = r.id_visita::text))   -- item com data antiga entra se a REFERÊNCIA da visita é do período do painel
   AND r.dt_referencia < CURRENT_DATE + 1
   AND NOT EXISTS (SELECT 1 FROM tmp_visitas_invalidas iv WHERE iv.id = r.id_visita::text)
   AND r.id_propriedade IN (SELECT id_propriedade FROM public.resumo_propriedades);
@@ -130,7 +130,7 @@ INSERT INTO tmp_base
 SELECT r.* FROM public.sisateg_receita_despesa r
 WHERE r.atividade = 'BOVINOCULTURA DE LEITE' AND r.status_item = 'ATIVO' AND r.tipo_registro = 'DETALHADO'
   AND r.tipo_valor = 'VALOR_UNITARIO' AND r.valor IS NOT NULL
-  AND (r.dt_referencia >= DATE '2024-06-01' OR EXISTS (SELECT 1 FROM tmp_ref_visita tr WHERE tr.id = r.id_visita::text))   -- item com data antiga entra se a REFERÊNCIA da visita é do período do painel
+  AND (r.dt_referencia >= DATE '2024-01-01' OR EXISTS (SELECT 1 FROM tmp_ref_visita tr WHERE tr.id = r.id_visita::text))   -- item com data antiga entra se a REFERÊNCIA da visita é do período do painel
   AND r.dt_referencia < CURRENT_DATE + 1
   AND NOT EXISTS (SELECT 1 FROM tmp_visitas_invalidas iv WHERE iv.id = r.id_visita::text)
   AND r.id_propriedade IN (SELECT id_propriedade FROM public.resumo_propriedades)
@@ -138,7 +138,16 @@ WHERE r.atividade = 'BOVINOCULTURA DE LEITE' AND r.status_item = 'ATIVO' AND r.t
   AND NOT EXISTS (SELECT 1 FROM tmp_base p WHERE p.id_visita = r.id_visita AND p.id_item = r.id_item AND p.dt_referencia = r.dt_referencia AND p.tipo_valor = 'VALOR_UNITARIO');
 UPDATE tmp_base SET tipo_registro = 'PRINCIPAL' WHERE tipo_registro = 'DETALHADO';
 -- Itens com data ANTERIOR a 2024-06 de visitas cuja REFERENCIA e do periodo do painel (item copiado de visita antiga): nao estao na tabela combinada, entram direto das tabelas brutas
-DO $$ DECLARE sel text; tb text; BEGIN SELECT string_agg('r.' || quote_ident(attname) || '::' || format_type(atttypid, atttypmod), ', ' ORDER BY attnum) INTO sel FROM pg_attribute WHERE attrelid = 'tmp_base'::regclass AND attnum > 0 AND NOT attisdropped; FOREACH tb IN ARRAY ARRAY['sisateg_receita','sisateg_despesa'] LOOP EXECUTE 'INSERT INTO tmp_base SELECT ' || sel || ' FROM public.' || quote_ident(tb) || ' r WHERE r.atividade = ''BOVINOCULTURA DE LEITE'' AND r.status_item = ''ATIVO'' AND r.tipo_registro = ''PRINCIPAL'' AND r.dt_referencia < DATE ''2024-06-01'' AND EXISTS (SELECT 1 FROM tmp_ref_visita tr WHERE tr.id = r.id_visita::text) AND NOT EXISTS (SELECT 1 FROM tmp_visitas_invalidas iv WHERE iv.id = r.id_visita::text) AND r.id_propriedade IN (SELECT id_propriedade FROM public.resumo_propriedades) AND NOT EXISTS (SELECT 1 FROM tmp_base b WHERE b.id_item_visita = r.id_item_visita AND b.tipo_valor = r.tipo_valor)'; END LOOP; END $$;   -- (só as linhas de preço acrescentadas acima eram detalhadas)
+DO $$ DECLARE sel text; tb text; BEGIN SELECT string_agg('r.' || quote_ident(attname) || '::' || format_type(atttypid, atttypmod), ', ' ORDER BY attnum) INTO sel FROM pg_attribute WHERE attrelid = 'tmp_base'::regclass AND attnum > 0 AND NOT attisdropped; FOREACH tb IN ARRAY ARRAY['sisateg_receita','sisateg_despesa'] LOOP EXECUTE 'INSERT INTO tmp_base SELECT ' || sel || ' FROM public.' || quote_ident(tb) || ' r WHERE r.atividade = ''BOVINOCULTURA DE LEITE'' AND r.status_item = ''ATIVO'' AND r.tipo_registro = ''PRINCIPAL'' AND r.dt_referencia < DATE ''2024-01-01'' AND EXISTS (SELECT 1 FROM tmp_ref_visita tr WHERE tr.id = r.id_visita::text) AND NOT EXISTS (SELECT 1 FROM tmp_visitas_invalidas iv WHERE iv.id = r.id_visita::text) AND r.id_propriedade IN (SELECT id_propriedade FROM public.resumo_propriedades) AND NOT EXISTS (SELECT 1 FROM tmp_base b WHERE b.id_item_visita = r.id_item_visita AND b.tipo_valor = r.tipo_valor)'; END LOOP; END $$;   -- (só as linhas de preço acrescentadas acima eram detalhadas)
+-- Itens COPIADOS de visita antiga: a visita tem o mesmo item (mesmo id_item, tipo e valor) com data do mes de referencia E com data de outro mes (ex.: 2023-12 e 2025-02).
+-- Como abaixo todos passam para o mes da referencia, os dois somariam (valor em dobro); a planilha conta so o do mes da referencia. Apaga a copia de data diferente.
+CREATE INDEX ON tmp_base (id_visita, id_item);
+DELETE FROM tmp_base b USING public.sisateg_rel_listar_visita lv
+WHERE lv.id_visita::text = b.id_visita::text AND lv.referencia_visita ~ '^[0-9]{4}-[0-9]{2}$'
+  AND date_trunc('month', b.dt_referencia::date) <> to_date(lv.referencia_visita || '-01', 'YYYY-MM-DD')
+  AND EXISTS (SELECT 1 FROM tmp_base o WHERE o.id_visita = b.id_visita AND o.id_item = b.id_item AND o.tipo_valor = b.tipo_valor AND o.tipo_registro = b.tipo_registro
+                AND o.valor IS NOT DISTINCT FROM b.valor
+                AND date_trunc('month', o.dt_referencia::date) = to_date(lv.referencia_visita || '-01', 'YYYY-MM-DD'));
 -- O mês de cada visita é o da REFERÊNCIA DA VISITA (é assim que a planilha do SisATeG conta); a data do item só vale se a visita não tiver referência
 UPDATE tmp_base b SET dt_referencia = to_date(lv.referencia_visita || '-01', 'YYYY-MM-DD')
 FROM public.sisateg_rel_listar_visita lv
@@ -273,7 +282,7 @@ CREATE TABLE public.resumo_despesa_subgrupo AS
 WITH base AS (
   SELECT r.* FROM tmp_base r
   WHERE r.atividade = 'BOVINOCULTURA DE LEITE' AND r.status_item = 'ATIVO' AND r.tipo_registro = 'PRINCIPAL'
-    AND r.dt_referencia >= DATE '2024-06-01' AND r.dt_referencia < CURRENT_DATE + 1
+    AND r.dt_referencia >= DATE '2024-01-01' AND r.dt_referencia < CURRENT_DATE + 1
     AND NOT EXISTS (SELECT 1 FROM tmp_visitas_invalidas iv WHERE iv.id = r.id_visita::text)   -- fora as visitas excluídas (o SisATeG também não conta)
     AND r.grupo = 'Despesa'
     AND r.id_propriedade IN (SELECT id_propriedade FROM public.resumo_propriedades)
@@ -307,7 +316,7 @@ CREATE TABLE public.resumo_tipo AS
 WITH base AS (
   SELECT r.* FROM tmp_base r
   WHERE r.atividade = 'BOVINOCULTURA DE LEITE' AND r.status_item = 'ATIVO' AND r.tipo_registro = 'PRINCIPAL'
-    AND r.dt_referencia >= DATE '2024-06-01' AND r.dt_referencia < CURRENT_DATE + 1
+    AND r.dt_referencia >= DATE '2024-01-01' AND r.dt_referencia < CURRENT_DATE + 1
     AND NOT EXISTS (SELECT 1 FROM tmp_visitas_invalidas iv WHERE iv.id = r.id_visita::text)   -- fora as visitas excluídas (o SisATeG também não conta)
     AND r.grupo IN ('Receita','Despesa')
     AND r.id_propriedade IN (SELECT id_propriedade FROM public.resumo_propriedades)
@@ -353,7 +362,7 @@ SELECT r.id_visita::text AS id_visita, r.id_propriedade,
 FROM public.sisateg_receita_despesa r
 JOIN public.sisateg_rel_listar_visita lv ON lv.id_visita::text = r.id_visita::text
 WHERE r.atividade = 'BOVINOCULTURA DE LEITE' AND r.status_item = 'ATIVO' AND r.tipo_registro = 'PRINCIPAL'
-  AND (r.dt_referencia >= DATE '2024-06-01' OR lv.referencia_visita >= '2024-06') AND r.dt_referencia < CURRENT_DATE + 1
+  AND (r.dt_referencia >= DATE '2024-01-01' OR lv.referencia_visita >= '2024-01') AND r.dt_referencia < CURRENT_DATE + 1
   AND lv.dt_exclusao_visita IS NULL
   AND lv.referencia_visita ~ '^[0-9]{4}-[0-9]{2}$'
   AND to_char(r.dt_referencia, 'YYYY-MM') <> lv.referencia_visita
@@ -367,7 +376,7 @@ CREATE TABLE public.resumo_propriedade_mes AS
 SELECT DISTINCT p.id_propriedade, lv.referencia_visita::text AS mes
 FROM public.sisateg_rel_listar_visita lv
 JOIN public.resumo_propriedades p ON p.id_propriedade::text = lv.id_propriedade::text
-WHERE lv.atividade = 'BOVINOCULTURA DE LEITE' AND lv.dt_exclusao_visita IS NULL AND lv.referencia_visita >= '2024-06';
+WHERE lv.atividade = 'BOVINOCULTURA DE LEITE' AND lv.dt_exclusao_visita IS NULL AND lv.referencia_visita >= '2024-01';
 CREATE INDEX ON public.resumo_propriedade_mes (id_propriedade, mes);
 
 ANALYZE public.resumo_propriedades;

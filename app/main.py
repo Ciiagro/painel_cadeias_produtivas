@@ -32,7 +32,7 @@ def _db_url():
 DB_URL = _db_url()
 TABLE = os.environ.get("TABLE_NAME", "public.vw_resumo_leite_mensal")
 PROPS = os.environ.get("PROPS_NAME", "public.vw_propriedades")
-MES_INICIO = os.environ.get("MES_INICIO", "2024-06")  # início da base completa (YYYY-MM)
+MES_INICIO = os.environ.get("MES_INICIO", "2024-01")  # início da base completa (YYYY-MM)
 if not re.fullmatch(r"[A-Za-z0-9_]+\.[A-Za-z0-9_]+", TABLE):
     raise RuntimeError("TABLE_NAME inválido (use schema.nome)")
 
