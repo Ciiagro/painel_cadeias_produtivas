@@ -169,7 +169,13 @@ def serie(supervisor: str | None = None, tecnico: str | None = None, propriedade
         GROUP BY mes ORDER BY mes"""
     wp, pp = _where(supervisor, tecnico, projeto, propriedade, None, municipio, regiao)
     # o card conta as propriedades ativas hoje; no filtro 'Inativas' conta as inativas
-    wp.append("NOT ativa" if situacao == "inativa" else "ativa")
+    if situacao == "inativa":
+        wp.append("NOT ativa")
+    elif situacao == "ativa":
+        wp.append("ativa")
+    # sem filtro de situação (Ativas e inativas): não restringe, para o valor mudar entre as 3 opções
+    if not wp:
+        wp.append("TRUE")
     with engine.connect() as con:
         rows = [dict(r._mapping) for r in con.execute(text(sql), p)]
         total_props = con.execute(text(f"SELECT COUNT(DISTINCT id_propriedade) FROM {PROPS} WHERE {' AND '.join(wp)}"), pp).scalar()
@@ -192,7 +198,8 @@ def serie(supervisor: str | None = None, tecnico: str | None = None, propriedade
             # sem filtro de situação (Ativas e inativas): conta todas com visita no mês, como a planilha do SisATeG
             for rr in con.execute(text(f"SELECT mes, COUNT(DISTINCT id_propriedade) AS n FROM public.vw_propriedade_mes WHERE {' AND '.join(wm)} GROUP BY mes"), pm):
                 props_mes[rr[0]] = int(rr[1])
-    except Exception:
+    except Exception as ex:
+        print("AVISO: vw_propriedade_mes indisponivel no servidor (rode transferir_resumo.py):", str(ex).splitlines()[0])
         props_mes = {}
     for r in rows:
         r["propriedades_total"] = int(total_props or 0)
