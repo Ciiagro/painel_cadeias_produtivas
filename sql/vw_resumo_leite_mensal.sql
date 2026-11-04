@@ -72,6 +72,6 @@ LEFT JOIN (SELECT DISTINCT ON (btrim(tecnico_responsavel, E' \t\r\n')) btrim(tec
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'painel_leitura') THEN
-    GRANT SELECT ON public.vw_propriedades, public.vw_resumo_leite_mensal, public.vw_despesa_subgrupo, public.vw_tipo, public.vw_leite_revisar TO painel_leitura;
+    GRANT SELECT ON public.vw_propriedades, public.vw_resumo_leite_mensal, public.vw_despesa_subgrupo, public.vw_tipo, public.vw_leite_revisar, public.vw_propriedade_mes TO painel_leitura;
   END IF;
 END $$;

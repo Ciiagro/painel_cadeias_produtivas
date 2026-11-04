@@ -185,7 +185,11 @@ def serie(supervisor: str | None = None, tecnico: str | None = None, propriedade
     try:
         with engine.connect() as con:
             wm, pm = _where(supervisor, tecnico, projeto, propriedade, None, municipio, regiao)
-            wm.append("NOT ativa" if situacao == "inativa" else "ativa")
+            if situacao == "inativa":
+                wm.append("NOT ativa")
+            elif situacao == "ativa":
+                wm.append("ativa")
+            # sem filtro de situação (Ativas e inativas): conta todas com visita no mês, como a planilha do SisATeG
             for rr in con.execute(text(f"SELECT mes, COUNT(DISTINCT id_propriedade) AS n FROM public.vw_propriedade_mes WHERE {' AND '.join(wm)} GROUP BY mes"), pm):
                 props_mes[rr[0]] = int(rr[1])
     except Exception:
