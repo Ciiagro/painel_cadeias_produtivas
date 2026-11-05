@@ -13,7 +13,7 @@ No Explorer, os `.bat` funcionam com dois cliques.)
 | **Toda semana** | `python scripts/atualizar_tudo.py` (completo, olha 120 dias) | `atualizar_leite_completo.bat` | mais demorado |
 | Só mudou o SQL do resumo | `python scripts/atualizar_tudo.py --so-resumo --completo` | `atualizar_so_resumo_completo.bat` | só refaz o resumo |
 | Recarregar de 2026 | `python scripts/atualizar_tudo.py --desde 2026-01-01` | `atualizar_historia_2026.bat` | depende do período |
-| Recarregar tudo (2024 em diante) | `python scripts/atualizar_tudo.py --desde 2024-01-01` | `atualizar_historia_completa.bat` | 15 a 20 min |
+| Recarregar tudo (2024 em diante) | `python scripts/atualizar_tudo.py --desde 2023-01-01` | `atualizar_historia_completa.bat` | 15 a 20 min |
 
 - O **rápido** olha só os últimos 45 dias e recalcula só os meses recentes.
 - O SisATeG às vezes lança itens em **meses antigos depois**. Esses só chegam no completo (120 dias) ou no `--desde`.

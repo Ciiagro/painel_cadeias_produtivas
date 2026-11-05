@@ -8,7 +8,7 @@ con = local(); cur = con.cursor()
 cur.execute("""SELECT referencia_visita, id_propriedade, numero_visita, COUNT(*) n,
        string_agg(id_visita::text, ' , ' ORDER BY id_visita::bigint) ids, MAX(imovel) imovel
   FROM public.sisateg_rel_listar_visita
-  WHERE atividade = 'BOVINOCULTURA DE LEITE' AND dt_exclusao_visita IS NULL AND referencia_visita >= '2024-01'
+  WHERE atividade = 'BOVINOCULTURA DE LEITE' AND dt_exclusao_visita IS NULL AND referencia_visita >= '2023-01'
   GROUP BY 1, 2, 3 HAVING COUNT(*) > 1 ORDER BY 1, 2""")
 rows = cur.fetchall()
 por = {}
